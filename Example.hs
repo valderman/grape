@@ -1,13 +1,19 @@
-import Patterns
+import Trope
+
+readNum :: Stm (Exp (Maybe Int))
+readNum = do
+  val <- scanN
+  if_ (val .== 0)
+    (new Nothing)
+    (new $ Just (inj val))
 
 test :: Stm ()
-test = do
-  v <- New
-  Set v 27
-  with $ \x -> Case (adt $ Just (Barbar (inj (Var v)) 30))
-    [ (Just (Barbar wc (var x)), Print (unsafeFreeze x))
-      -- this should be an error, since @x@ is reused:
---    , (Nothing,                  Case undefined [(Just (var x), Print (unsafeFreeze x))])
-    , (Nothing,                  Print (Lit 100))
+test = void $ do
+  val <- readNum
+  with $ \(v, x) -> match val
+    [ Just 1       ~> (printS "one" >> pure true)
+    , Nothing      ~> (printS "nope" >> pure true)
+    , Just (var v) ~> (printN x >> pure true)
     ]
-  Print (unsafeFreeze v)
+
+main = compileAndRun test
