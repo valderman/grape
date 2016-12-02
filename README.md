@@ -9,8 +9,7 @@ EDSLs. See `Example.hs`.
 
 TODO
 ----
-* Generalise `new` and `match` to any monadic EDSL with read, write, alloc,
-  conjunction, equality and conditionals.
+* Get rid of a few methods from `PatM`.
 * Generalise pattern representation over per-EDSL primitive types.
   - Probably can't be done without using exceptions for "type-checking"
     injected terms.

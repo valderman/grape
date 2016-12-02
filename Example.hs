@@ -9,11 +9,11 @@ readNum = do
 
 test :: Stm ()
 test = void $ do
-  val <- readNum
-  with $ \(v, x) -> match val
+  mx <- readNum
+  with $ \x -> match mx
     [ Just 1       ~> (printS "one" >> pure true)
     , Nothing      ~> (printS "nope" >> pure true)
-    , Just (var v) ~> (printN x >> pure true)
+    , Just (var x) ~> (printN (val x) >> pure true)
     ]
 
 main = compileAndRun test
