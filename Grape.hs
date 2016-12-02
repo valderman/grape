@@ -1,16 +1,16 @@
 {-# LANGUAGE FlexibleInstances #-}
 -- | Grape: Generic Reification of ADTs and Patterns for EDSLs
 module Grape
-  ( ADT (..), Exp, Stm, Pat, Var
+  ( ADT (..), Exp, Stm, Pat, Var, Bind
   , module Control.Monad
   , true, false, undef, (.==), (!=), (.>), (.<), (.>=), (.<=), not_
   , printS, printN, scanN, if_, newRef, getRef, bye
-  , inj, wc, var, (~>), with, match, new
+  , inj, wc, Grape.var, val, (~>), with, match, new
   , Grape.compile, Grape.compileAndRun
   ) where
 import Pat hiding (Exp)
 import Exp
-import Stm
+import Stm hiding (Bind)
 import Comp
 import Control.Monad
 import Control.Shell
@@ -45,10 +45,15 @@ setRef = Set
 bye :: Stm (Exp a)
 bye = Die
 
-with :: ((Var a, Exp a) -> Stm b) -> Stm b
+newtype Bind a = Bind {val :: Exp a}
+
+var :: ADT a => Bind a -> a
+var (Bind (Var v)) = Exp.var v
+
+with :: (Bind a -> Stm b) -> Stm b
 with f = do
   x <- newRef undef
-  f (x, Var x)
+  f (Bind $ Var x)
 
 instance ADT (Exp Int) where encAlg = Pat.Prim . PInt
 instance ADT (Exp Bool) where encAlg = Pat.Prim . PBool
