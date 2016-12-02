@@ -6,9 +6,9 @@ module Grape
   , true, false, undef, (.==), (!=), (.>), (.<), (.>=), (.<=), not_
   , printS, printN, scanN, if_, newRef, getRef, bye
   , inj, wc, var, (~>), with, match, new
-  , Trope.compile, Trope.compileAndRun
+  , Grape.compile, Grape.compileAndRun
   ) where
-import Pat
+import Pat hiding (Exp)
 import Exp
 import Stm
 import Comp
@@ -50,11 +50,11 @@ with f = do
   x <- newRef undef
   f (x, Var x)
 
-instance ADT (Exp Int) where encAlg = Prim . PInt
-instance ADT (Exp Bool) where encAlg = Prim . PBool
+instance ADT (Exp Int) where encAlg = Pat.Prim . PInt
+instance ADT (Exp Bool) where encAlg = Pat.Prim . PBool
 
-instance ADT Int where encAlg = Prim . PInt . Const
-instance ADT Bool where encAlg = Prim . PBool . Bool
+instance ADT Int where encAlg = Pat.Prim . PInt . Const
+instance ADT Bool where encAlg = Pat.Prim . PBool . Bool
 
 instance ADT a => ADT (Maybe a)
 instance (ADT a, ADT b) => ADT (Either a b)

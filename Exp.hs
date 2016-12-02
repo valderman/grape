@@ -2,13 +2,11 @@
 -- | Expression and pattern representations.
 module Exp where
 import Control.Exception
-import Pat
+import Pat hiding (Exp)
+import qualified Pat
 
 -- | Typed variables
 newtype Var a = V {varName :: Name}
-
--- | Pointers: necessary to store ADTs
-type Ptr = Int
 
 -- | Binary operators
 data BOp a b where
@@ -28,6 +26,7 @@ data BOp a b where
 
 -- | Expression language
 data Exp a where
+  Prim  :: PrimType -> Exp PrimType
   Const :: Int -> Exp Int
   Bool  :: Bool -> Exp Bool
   BOp   :: BOp a b -> Exp a -> Exp a -> Exp b
@@ -68,20 +67,9 @@ not_ = (.== false)
 (.>), (.<), (.>=), (.<=), (.==), (!=) :: Exp a -> Exp a -> Exp Bool
 [(.>), (.<), (.>=), (.<=), (.==), (!=)] = map BOp [Gt, Lt, Ge, Le, Eq, Neq]
 
--- | Pattern representation.
-newtype Pat a = Pat {unPat :: Alg}
-
--- | Build a pattern from an ADT.
-pat :: ADT a => a -> Pat a
-pat = Pat . encAlg
-
 -- | Inject an EDSL term into an ADT.
 inj :: ADT (Exp a) => Exp a -> a
 inj = throw . PatEx . encAlg
-
--- | An unnamed wildcard.
-wc :: ADT a => a
-wc = throw $ PatEx $ Hole Nothing
 
 -- | A named wildcard.
 var :: ADT a => Var a -> a

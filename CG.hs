@@ -1,12 +1,11 @@
 {-# LANGUAGE GADTs, GeneralizedNewtypeDeriving #-}
 -- | Code generation for expressions and statements.
 module CG where
-import Control.Monad
 import Control.Monad.State
 import Data.Monoid
 import Exp
 import Stm
-import Pat
+import Pat hiding (Exp, Alg (..))
 
 data Env = Env
   { envNameSupply :: Name
@@ -63,12 +62,14 @@ cgVar :: Var a -> String
 cgVar (V v) = 'v' : show v
 
 cgExp :: Exp a -> String
-cgExp (Const n)    = show n
-cgExp (Bool b)     = if b then "1" else "0"
-cgExp (BOp op a b) = mconcat ["(", cgExp a, cgBOp op, cgExp b, ")"]
-cgExp (Var v)      = cgVar v
-cgExp (Alg v)      = cgVar v
-cgExp (Undef)      = "0"
+cgExp (Prim (PInt n))  = cgExp n
+cgExp (Prim (PBool b)) = cgExp b
+cgExp (Const n)        = show n
+cgExp (Bool b)         = if b then "1" else "0"
+cgExp (BOp op a b)     = mconcat ["(", cgExp a, cgBOp op, cgExp b, ")"]
+cgExp (Var v)          = cgVar v
+cgExp (Alg v)          = cgVar v
+cgExp (Undef)          = "0"
 
 cgBOp :: BOp a b -> String
 cgBOp Add = "+"
@@ -118,18 +119,14 @@ cgStm (Alloca n) = do
   return (Var v)
 cgStm (If c th el) = do
   v <- newVar
-  th' <- indent 2 . fst <$> capture (cgStm $ th >>= Set v)
-  el' <- indent 2 . fst <$> capture (cgStm $ el >>= Set v)
+  th' <- unlines . fst <$> capture (cgStm $ th >>= Set v)
+  el' <- unlines . fst <$> capture (cgStm $ el >>= Set v)
   emit $ "if(" <> cgExp c <> "){\n" <> th' <> "} else {\n" <> el' <> "}"
   return (Var v)
 cgStm (Die) = do
   cgStm $ Print "<suicide>"
   emit $ "exit(1);"
   return Undef
-
-indent :: Int -> [String] -> String
-indent n = unlines -- unlines . map (ind ++)
-  where ind = replicate n ' '
 
 cgProg :: Stm () -> String
 cgProg = wrap . runCGM . cg
