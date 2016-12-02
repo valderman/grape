@@ -6,7 +6,7 @@ module Grape
   , true, false, undef, (.==), (!=), (.>), (.<), (.>=), (.<=), not_
   , printS, printN, scanN, if_, newRef, getRef, bye
   , inj, wc, var, (~>), with, match, new
-  , Trope.compile, Trope.compileAndRun
+  , Grape.compile, Grape.compileAndRun
   ) where
 import Pat
 import Exp

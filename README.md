@@ -1,6 +1,6 @@
-Trope
+Grape
 =====
-Type-safe Reification Of Patterns for EDSLs
+Generic Reification of ADTs and Patterns for EDSLs
 
 What?
 -----
