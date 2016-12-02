@@ -50,6 +50,14 @@ instance Show PatEx where
   show _ = "PatEx"
 instance Exception PatEx
 
+-- | Encode an ADT as a pattern.
+encode :: ADT a => a -> Alg
+encode x = unsafePerformIO $ do
+  epat <- try $ pure $! encAlg $! x
+  case epat of
+    Left (PatEx x') -> pure x'
+    Right x'        -> pure x'
+
 class ADT a where
   encAlg :: a -> Alg
   default encAlg :: (Generic a, GAlg (Rep a)) => a -> Alg
@@ -76,11 +84,7 @@ instance GAlg a => GAlg (M1 S c a) where
 
 -- Primitive/value with kind *
 instance ADT a => GAlg (K1 i a) where
-  algG (K1 x) = unsafePerformIO $ do
-    epat <- try $ pure $! encAlg $! x
-    case epat of
-      Left (PatEx x') -> pure [x']
-      Right x'        -> pure [x']
+  algG (K1 x) = [encode x]
 
 -- Sum type
 instance (GAlg a, GAlg b) => GAlg (a :+: b) where
@@ -154,7 +158,7 @@ match _ _ = do
 
 -- | Build a pattern from an ADT.
 pat :: ADT a => a -> Pat a
-pat = Pat . encAlg
+pat = Pat . encode
 
 -- | An unnamed wildcard.
 wc :: ADT a => a
