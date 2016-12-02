@@ -28,6 +28,7 @@ allocSize (Prim _)   = 1
 allocSize (Con _ as) = length as + 1
 allocSize (Hole _)   = error "holes have no size, silly"
 
+-- TODO: this could probably be a lot smaller
 class Monad m => PatM m where
   type Exp m :: * -> *
   tagToPrim   :: Tag -> m (Exp m PrimType)
