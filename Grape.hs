@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleInstances #-}
--- | Trope: Type-safe Reification Of Patterns for EDSLs
-module Trope
+-- | Grape: Generic Reification of ADTs and Patterns for EDSLs
+module Grape
   ( ADT (..), Exp, Stm, Pat, Var
   , module Control.Monad
   , true, false, undef, (.==), (!=), (.>), (.<), (.>=), (.<=), not_
