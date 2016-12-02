@@ -106,7 +106,7 @@ type Case m a b = (Pat a, m (Exp m b))
 
 (~>) :: (PatM m, ADT a) => a -> m (Exp m b) -> Case m a b
 a ~> b = (pat a, b)
-infixr 9 ~>
+infixr 0 ~>
 
 new :: (PatM m, ADT a) => a -> m (Exp m a)
 new x = do
