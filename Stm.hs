@@ -48,11 +48,12 @@ instance Pat.PatM Stm where
   type Exp Stm = Exp
   tagToPrim = pure . Prim . PInt . Const
   primToExp = pure . Prim
-  wrap (Alg (V n)) = pure (Var (V n))
-  wrap (Var (V n)) = pure (Var (V n))
   unwrap (Alg (V n)) = pure (Var (V n))
   unwrap (Var (V n)) = pure (Var (V n))
-  alloc = Alloca
+  alloc n f = do
+    ptr@(Var v) <- Alloca n
+    f ptr
+    return (Alg v)
   store = Write
   load = Read
   ifThenElse = If

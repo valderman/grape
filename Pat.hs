@@ -33,9 +33,8 @@ class Monad m => PatM m where
   type Exp m :: * -> *
   tagToPrim   :: Tag -> m (Exp m PrimType)
   primToExp   :: PrimType -> m (Exp m PrimType)
-  wrap        :: ADT a => Exp m Ptr -> m (Exp m a)
   unwrap      :: ADT a => Exp m a -> m (Exp m Ptr)
-  alloc       :: Int -> m (Exp m Ptr)
+  alloc       :: Int -> (Exp m Ptr -> m ()) -> m (Exp m a)
   store       :: Exp m Ptr -> Offset -> Exp m a -> m ()
   load        :: Exp m Ptr -> Offset -> m (Exp m a)
   ifThenElse  :: Exp m Bool -> m (Exp m a) -> m (Exp m a) -> m (Exp m a)
@@ -109,14 +108,10 @@ a ~> b = (pat a, b)
 infixr 0 ~>
 
 new :: (PatM m, ADT a) => a -> m (Exp m a)
-new x = do
-    ptr <- store' (encAlg x)
-    wrap ptr
+new x = store' (encAlg x)
   where
     store' alg = do
-      ptr <- alloc $ allocSize alg
-      go ptr alg
-      return ptr
+      alloc (allocSize alg) $ \ptr -> go ptr alg
 
     go ptr (Prim p) = store ptr 0 =<< primToExp p
     go ptr (Con t as) = do
