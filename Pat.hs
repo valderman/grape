@@ -16,7 +16,6 @@ data family PrimType
 -- | Encoding of an algebraic type or pattern: can be either a primitive value,
 --   an algebraic constructor + arguments, or an optionally named hole.
 --   Holes are only OK in patterns.
---   TODO: turn into a GADT and forcefully restrict holes to patterns?
 data Alg = Prim PrimType | Con Tag [Alg] | Hole (Maybe Name)
 
 data Ptr
