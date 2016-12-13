@@ -29,14 +29,12 @@ type family StmM :: * -> *
 
 -- | Expression language
 data Exp a where
-  Prim  :: Prim StmM -> Exp (Prim StmM)
   Const :: Int -> Exp Int
-  ToW64 :: Exp a -> Exp Word64
-  Word  :: Word64 -> Exp Word64
   Bool  :: Bool -> Exp Bool
+  B2I   :: Exp Bool -> Exp Int
   BOp   :: BOp a b -> Exp a -> Exp a -> Exp b
   Var   :: Var a -> Exp a
-  Alg   :: Var Ptr -> Exp a
+  Alg   :: Var Int -> Exp a
   Undef :: Exp a
 
 instance Show (Exp Int) where

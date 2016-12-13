@@ -25,9 +25,9 @@ data Stm a where
   NewRef :: Exp a -> Stm (Var a)
 
   -- Loading/storing things; offsets are in # of machine words
-  Read   :: Exp Pat.Ptr -> Int -> Stm (Exp a)
-  Write  :: Exp Pat.Ptr -> Int -> Exp a -> Stm ()
-  Alloca :: Int -> Stm (Exp Pat.Ptr)
+  Read   :: Exp Int -> Int -> Stm (Exp a)
+  Write  :: Exp Int -> Int -> Exp a -> Stm ()
+  Alloca :: Int -> Stm (Exp Int)
 
   -- Conditionals
   If     :: Exp Bool -> Stm (Exp a) -> Stm (Exp a) -> Stm (Exp a)
@@ -48,8 +48,8 @@ instance Monad Stm where
 
 instance Pat.PatM Stm where
   type Exp Stm = Exp
-  tagToPrim = pure . Prim . Pat.W64 . Word . fromIntegral
-  primToExp = pure . Prim
+  type Prim Stm = Exp Int
+  tagToPrim = pure . Const
   unwrap (Alg (V n)) = pure (Var (V n))
   unwrap (Var (V n)) = pure (Var (V n))
   alloc n f = do

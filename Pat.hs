@@ -22,13 +22,6 @@ data Alg (m :: * -> *) where
   Con  :: Tag -> [Alg m] -> Alg m
   Hole :: Maybe Name -> Alg m -- TODO: Name is stupid; generalize!
 
-data Prim (m :: * -> *) where
-  W8  :: Exp m Word8  -> Prim m
-  W16 :: Exp m Word16 -> Prim m
-  W32 :: Exp m Word32 -> Prim m
-  W64 :: Exp m Word64 -> Prim m
-
-data Ptr
 type Offset = Int
 
 -- | How much memory is needed by the constructor and pointers to arguments?
@@ -39,18 +32,18 @@ allocSize (Hole _)   = error "holes have no size, silly"
 
 -- TODO: this could probably be a lot smaller
 class Monad m => PatM m where
-  type Exp m :: * -> *
-  tagToPrim   :: Tag -> m (Exp m (Prim m))
-  primToExp   :: Prim m -> m (Exp m (Prim m))
-  unwrap      :: ADT m a => Exp m a -> m (Exp m Ptr)
-  alloc       :: Int -> (Exp m Ptr -> m ()) -> m (Exp m a)
-  store       :: Exp m Ptr -> Offset -> Exp m a -> m ()
-  load        :: Exp m Ptr -> Offset -> m (Exp m a)
+  type Exp m  :: * -> *
+  type Prim m :: *
+  tagToPrim   :: Tag -> m (Prim m)
+  unwrap      :: ADT m a => Exp m a -> m (Prim m)
+  alloc       :: Int -> (Prim m -> m ()) -> m (Exp m a)
+  store       :: Prim m -> Offset -> Prim m -> m ()
+  load        :: Prim m -> Offset -> m (Prim m)
   ifThenElse  :: Exp m Bool -> m (Exp m a) -> m (Exp m a) -> m (Exp m a)
-  equals      :: Exp m (Prim m) -> Exp m (Prim m) -> m (Exp m Bool)
+  equals      :: Prim m -> Prim m -> m (Exp m Bool)
   conjunction :: [Exp m Bool] -> m (Exp m Bool)
   bool        :: Bool -> m (Exp m Bool)
-  setRef      :: Name -> Exp m a -> m ()
+  setRef      :: Name -> Prim m -> m ()
   die         :: String -> m (Exp m a)
 
 data PatEx where
@@ -124,26 +117,27 @@ type Case m a b = (Pat m a, m (Exp m b))
 a ~> b = (pat a, b)
 infixr 0 ~>
 
-new :: (PatM m, ADT m a) => a -> m (Exp m a)
-new x = store' (encAlg x)
+new :: forall m a. (PatM m, ADT m a) => a -> m (Exp m a)
+new = store' . encAlg
   where
+    store' :: Alg m -> m (Exp m a)
     store' alg = do
       alloc (allocSize alg) $ \ptr -> go ptr alg
 
-    go ptr (Prim p) = store ptr 0 =<< primToExp p
+    go ptr (Prim p) = store ptr 0 p
     go ptr (Con t as) = do
       store ptr 0 =<< tagToPrim t
-      ptrs <- mapM store' as
+      ptrs <- mapM (store' >=> unwrap) as
       zipWithM_ (store ptr) [1..] ptrs
     go _ (Hole _) = do
       error "can't store holes, silly"
 
-matchOne :: PatM m => Exp m Ptr -> Alg m -> Int -> m (Exp m Bool)
+matchOne :: PatM m => Prim m -> Alg m -> Int -> m (Exp m Bool)
 matchOne ptr pat off = do
   case pat of
     Prim p -> do
       x <- load ptr off
-      equals x =<< primToExp p
+      equals x p
     Hole Nothing -> do
       bool True
     Hole (Just n) -> do

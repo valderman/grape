@@ -58,11 +58,11 @@ with f = do
   x <- newRef undef
   f (Bind $ Var x)
 
-instance ADT Stm (Exp Int) where encAlg = Pat.Prim . W64 . ToW64
-instance ADT Stm (Exp Bool) where encAlg = Pat.Prim . W64 . ToW64
+instance ADT Stm (Exp Int) where encAlg = Pat.Prim
+instance ADT Stm (Exp Bool) where encAlg = Pat.Prim . B2I
 
-instance ADT Stm Int where encAlg = Pat.Prim . W64 . Word . fromIntegral
-instance ADT Stm Bool where encAlg = Pat.Prim . W64 . Word . \x -> if x then 1 else 0
+instance ADT Stm Int where encAlg = Pat.Prim . Const
+instance ADT Stm Bool where encAlg = Pat.Prim . B2I . Bool
 
 instance ADT Stm a => ADT Stm (Maybe a)
 instance (ADT Stm a, ADT Stm b) => ADT Stm (Either a b)

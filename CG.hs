@@ -62,21 +62,13 @@ cgVar :: Var a -> String
 cgVar (V v) = 'v' : show v
 
 cgExp :: Exp a -> String
-cgExp (Prim p)     = cgPrim p
 cgExp (Const n)    = show n
-cgExp (Word n)     = show n ++ "ull"
-cgExp (ToW64 x)    = cgExp x
 cgExp (Bool b)     = if b then "1" else "0"
+cgExp (B2I b)      = cgExp b
 cgExp (BOp op a b) = mconcat ["(", cgExp a, cgBOp op, cgExp b, ")"]
 cgExp (Var v)      = cgVar v
 cgExp (Exp.Alg v)  = cgVar v
 cgExp (Undef)      = "0"
-
-cgPrim :: Prim Stm -> String
-cgPrim (W8 w)  = cgExp w
-cgPrim (W16 w) = cgExp w
-cgPrim (W32 w) = cgExp w
-cgPrim (W64 w) = cgExp w
 
 cgBOp :: BOp a b -> String
 cgBOp Add = "+"
