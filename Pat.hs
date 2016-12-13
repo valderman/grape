@@ -166,6 +166,6 @@ match _ _ = do
 pat :: ADT m a => a -> Pat m a
 pat = Pat . encode
 
--- | An unnamed wildcard.
--- wc :: ADT m a => a
--- wc = throw $ PatEx $ Hole Nothing
+-- | An unnamed wildcard, for the monad determined by the given proxy.
+wcByProxy :: forall m a. ADT m a => Proxy m -> a
+wcByProxy _ = throw $ PatEx (Hole Nothing :: Alg m)

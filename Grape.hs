@@ -14,9 +14,7 @@ import Stm hiding (Bind)
 import Comp
 import Control.Monad
 import Control.Shell
-
--- For wc
-import Control.Exception
+import Data.Proxy -- for wc
 
 compile :: FilePath -> Stm () -> IO ()
 compile f p = shell_ $ Comp.compile f p
@@ -69,4 +67,4 @@ instance (ADT Stm a, ADT Stm b) => ADT Stm (Either a b)
 
 -- | An unnamed wildcard.
 wc :: ADT Stm a => a
-wc = throw $ PatEx (Hole Nothing :: Alg Stm)
+wc = wcByProxy (Proxy :: Proxy Stm)
