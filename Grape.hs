@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleInstances, MultiParamTypeClasses, FlexibleContexts #-}
 -- | Grape: Generic Reification of ADTs and Patterns for EDSLs
 module Grape
   ( ADT (..), Exp, Stm, Pat, Var, Bind
@@ -14,6 +14,9 @@ import Stm hiding (Bind)
 import Comp
 import Control.Monad
 import Control.Shell
+
+-- For wc
+import Control.Exception
 
 compile :: FilePath -> Stm () -> IO ()
 compile f p = shell_ $ Comp.compile f p
@@ -47,7 +50,7 @@ bye = Die
 
 newtype Bind a = Bind {val :: Exp a}
 
-var :: ADT a => Bind a -> a
+var :: ADT Stm a => Bind a -> a
 var (Bind (Var v)) = Exp.var v
 
 with :: (Bind a -> Stm b) -> Stm b
@@ -55,11 +58,15 @@ with f = do
   x <- newRef undef
   f (Bind $ Var x)
 
-instance ADT (Exp Int) where encAlg = Pat.Prim . PInt
-instance ADT (Exp Bool) where encAlg = Pat.Prim . PBool
+instance ADT Stm (Exp Int) where encAlg = Pat.Prim . W64 . ToW64
+instance ADT Stm (Exp Bool) where encAlg = Pat.Prim . W64 . ToW64
 
-instance ADT Int where encAlg = Pat.Prim . PInt . Const
-instance ADT Bool where encAlg = Pat.Prim . PBool . Bool
+instance ADT Stm Int where encAlg = Pat.Prim . W64 . Word . fromIntegral
+instance ADT Stm Bool where encAlg = Pat.Prim . W64 . Word . \x -> if x then 1 else 0
 
-instance ADT a => ADT (Maybe a)
-instance (ADT a, ADT b) => ADT (Either a b)
+instance ADT Stm a => ADT Stm (Maybe a)
+instance (ADT Stm a, ADT Stm b) => ADT Stm (Either a b)
+
+-- | An unnamed wildcard.
+wc :: ADT Stm a => a
+wc = throw $ PatEx (Hole Nothing :: Alg Stm)

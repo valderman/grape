@@ -7,6 +7,8 @@ import Exp
 import qualified Pat
 import Control.Monad
 
+type instance StmM = Stm
+
 data Stm a where
   -- Monad ops
   Return :: a -> Stm a
@@ -46,7 +48,7 @@ instance Monad Stm where
 
 instance Pat.PatM Stm where
   type Exp Stm = Exp
-  tagToPrim = pure . Prim . PInt . Const
+  tagToPrim = pure . Prim . Pat.W64 . Word . fromIntegral
   primToExp = pure . Prim
   unwrap (Alg (V n)) = pure (Var (V n))
   unwrap (Var (V n)) = pure (Var (V n))

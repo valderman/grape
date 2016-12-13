@@ -4,6 +4,7 @@ module Exp where
 import Control.Exception
 import Pat hiding (Exp)
 import qualified Pat
+import Data.Word
 
 -- | Typed variables
 newtype Var a = V {varName :: Name}
@@ -24,20 +25,19 @@ data BOp a b where
   And :: BOp Bool Bool
   Or  :: BOp Bool Bool
 
+type family StmM :: * -> *
+
 -- | Expression language
 data Exp a where
-  Prim  :: PrimType -> Exp PrimType
+  Prim  :: Prim StmM -> Exp (Prim StmM)
   Const :: Int -> Exp Int
+  ToW64 :: Exp a -> Exp Word64
+  Word  :: Word64 -> Exp Word64
   Bool  :: Bool -> Exp Bool
   BOp   :: BOp a b -> Exp a -> Exp a -> Exp b
   Var   :: Var a -> Exp a
   Alg   :: Var Ptr -> Exp a
   Undef :: Exp a
-
--- | Primitive type for ADT encoding
-data instance PrimType where
-  PInt  :: Exp Int -> PrimType
-  PBool :: Exp Bool -> PrimType
 
 instance Show (Exp Int) where
   show (Const n)   = show n
@@ -68,9 +68,12 @@ not_ = (.== false)
 [(.>), (.<), (.>=), (.<=), (.==), (!=)] = map BOp [Gt, Lt, Ge, Le, Eq, Neq]
 
 -- | Inject an EDSL term into an ADT.
-inj :: ADT (Exp a) => Exp a -> a
-inj = throw . PatEx . encAlg
+inj :: ADT StmM (Exp a) => Exp a -> a
+inj = throw . PatEx . asStmM . encAlg
 
 -- | A named wildcard.
-var :: ADT a => Var a -> a
-var = throw . PatEx . Hole . Just . varName
+var :: ADT StmM a => Var a -> a
+var = throw . PatEx . asStmM . Hole . Just . varName
+
+asStmM :: Alg StmM -> Alg StmM
+asStmM = id

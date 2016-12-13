@@ -62,14 +62,21 @@ cgVar :: Var a -> String
 cgVar (V v) = 'v' : show v
 
 cgExp :: Exp a -> String
-cgExp (Prim (PInt n))  = cgExp n
-cgExp (Prim (PBool b)) = cgExp b
-cgExp (Const n)        = show n
-cgExp (Bool b)         = if b then "1" else "0"
-cgExp (BOp op a b)     = mconcat ["(", cgExp a, cgBOp op, cgExp b, ")"]
-cgExp (Var v)          = cgVar v
-cgExp (Alg v)          = cgVar v
-cgExp (Undef)          = "0"
+cgExp (Prim p)     = cgPrim p
+cgExp (Const n)    = show n
+cgExp (Word n)     = show n ++ "ull"
+cgExp (ToW64 x)    = cgExp x
+cgExp (Bool b)     = if b then "1" else "0"
+cgExp (BOp op a b) = mconcat ["(", cgExp a, cgBOp op, cgExp b, ")"]
+cgExp (Var v)      = cgVar v
+cgExp (Exp.Alg v)  = cgVar v
+cgExp (Undef)      = "0"
+
+cgPrim :: Prim Stm -> String
+cgPrim (W8 w)  = cgExp w
+cgPrim (W16 w) = cgExp w
+cgPrim (W32 w) = cgExp w
+cgPrim (W64 w) = cgExp w
 
 cgBOp :: BOp a b -> String
 cgBOp Add = "+"
@@ -109,13 +116,13 @@ cgStm (NewRef x) = do
   return v
 cgStm (Read ptr off) = do
   v <- newVar
-  emit $ cgVar v <> " = ((long long*)(" <> cgExp ptr <> "))[" ++ show off <> "];"
+  emit $ cgVar v <> " = ((unsigned long long*)(" <> cgExp ptr <> "))[" ++ show off <> "];"
   return (Var v)
 cgStm (Write ptr off x) = do
-  emit $ "((long long*)(" <> cgExp ptr <> "))[" <> show off <> "] = " <> cgExp x <> ";"
+  emit $ "((unsigned long long*)(" <> cgExp ptr <> "))[" <> show off <> "] = " <> cgExp x <> ";"
 cgStm (Alloca n) = do
   v <- newVar
-  emit $ cgVar v <> " = (long long)alloca(8*" <> show n <> ");"
+  emit $ cgVar v <> " = (unsigned long long)alloca(8*" <> show n <> ");"
   return (Var v)
 cgStm (If c th el) = do
   v <- newVar

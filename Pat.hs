@@ -1,28 +1,38 @@
-{-# LANGUAGE GADTs, TypeOperators, FlexibleInstances, FlexibleContexts, DefaultSignatures, ScopedTypeVariables, TypeFamilies #-}
+{-# LANGUAGE GADTs, TypeOperators, FlexibleInstances, FlexibleContexts, DefaultSignatures, ScopedTypeVariables, TypeFamilies, MultiParamTypeClasses #-}
 module Pat where
 import Control.Exception
 import Data.Hashable
 import GHC.Generics
 import System.IO.Unsafe
 import Control.Monad
+import Data.Typeable
+import Data.Word
 
 type Name = Int
 type Tag = Int
 
--- | Decouple 'Alg' from any particular implementation without having to pass
---   the implementation as a type var.
-data family PrimType
+data Algebraic where
+  Alg :: Typeable m => TypeRep -> Alg m -> Algebraic
 
 -- | Encoding of an algebraic type or pattern: can be either a primitive value,
 --   an algebraic constructor + arguments, or an optionally named hole.
 --   Holes are only OK in patterns.
-data Alg = Prim PrimType | Con Tag [Alg] | Hole (Maybe Name)
+data Alg (m :: * -> *) where
+  Prim :: Prim m -> Alg m
+  Con  :: Tag -> [Alg m] -> Alg m
+  Hole :: Maybe Name -> Alg m -- TODO: Name is stupid; generalize!
+
+data Prim (m :: * -> *) where
+  W8  :: Exp m Word8  -> Prim m
+  W16 :: Exp m Word16 -> Prim m
+  W32 :: Exp m Word32 -> Prim m
+  W64 :: Exp m Word64 -> Prim m
 
 data Ptr
 type Offset = Int
 
 -- | How much memory is needed by the constructor and pointers to arguments?
-allocSize :: Alg -> Int
+allocSize :: Alg m -> Int
 allocSize (Prim _)   = 1
 allocSize (Con _ as) = length as + 1
 allocSize (Hole _)   = error "holes have no size, silly"
@@ -30,83 +40,91 @@ allocSize (Hole _)   = error "holes have no size, silly"
 -- TODO: this could probably be a lot smaller
 class Monad m => PatM m where
   type Exp m :: * -> *
-  tagToPrim   :: Tag -> m (Exp m PrimType)
-  primToExp   :: PrimType -> m (Exp m PrimType)
-  unwrap      :: ADT a => Exp m a -> m (Exp m Ptr)
+  tagToPrim   :: Tag -> m (Exp m (Prim m))
+  primToExp   :: Prim m -> m (Exp m (Prim m))
+  unwrap      :: ADT m a => Exp m a -> m (Exp m Ptr)
   alloc       :: Int -> (Exp m Ptr -> m ()) -> m (Exp m a)
   store       :: Exp m Ptr -> Offset -> Exp m a -> m ()
   load        :: Exp m Ptr -> Offset -> m (Exp m a)
   ifThenElse  :: Exp m Bool -> m (Exp m a) -> m (Exp m a) -> m (Exp m a)
-  equals      :: Exp m PrimType -> Exp m PrimType -> m (Exp m Bool)
+  equals      :: Exp m (Prim m) -> Exp m (Prim m) -> m (Exp m Bool)
   conjunction :: [Exp m Bool] -> m (Exp m Bool)
   bool        :: Bool -> m (Exp m Bool)
   setRef      :: Name -> Exp m a -> m ()
   die         :: String -> m (Exp m a)
 
-data PatEx = PatEx Alg
+data PatEx where
+  PatEx :: Typeable m => Alg m -> PatEx
 instance Show PatEx where
   show _ = "PatEx"
 instance Exception PatEx
 
 -- | Encode an ADT as a pattern.
-encode :: ADT a => a -> Alg
+encode :: forall (m :: * -> *) a. ADT m a => a -> Alg m
 encode x = unsafePerformIO $ do
   epat <- try $ pure $! encAlg $! x
   case epat of
-    Left (PatEx x') -> pure x'
-    Right x'        -> pure x'
+    Right x' -> pure x'
+    Left e@(PatEx x') ->
+      case same x' (Proxy :: Proxy m)of
+        (Just Refl) -> pure x'
+        _           -> throw e
 
-class ADT a where
-  encAlg :: a -> Alg
-  default encAlg :: (Generic a, GAlg (Rep a)) => a -> Alg
+same :: forall m1 m2. (Typeable m1, Typeable m2)
+     => Alg (m1 :: * -> *) -> Proxy (m2 :: * -> *) -> Maybe (m1 :~: m2)
+same _ _ = eqT :: Maybe (m1 :~: m2)
+
+class Typeable m => ADT m a where
+  encAlg :: a -> Alg m
+  default encAlg :: (Generic a, GAlg m (Rep a)) => a -> Alg m
   encAlg = head . algG . from
 
-class GAlg f where
-  algG :: f a -> [Alg]
+class GAlg m f where
+  algG :: f a -> [Alg m]
 
 -- Constructor without arguments: M1 C case takes care of this
-instance GAlg U1 where
+instance GAlg m U1 where
   algG U1 = []
 
 -- Data constructor metadata: a value begins here
-instance (GAlg a, Constructor c) => GAlg (M1 C c a) where
+instance (GAlg m a, Constructor c) => GAlg m (M1 C c a) where
   algG (M1 x) = [Con (hash $ conName (undefined :: M1 C c a ())) (algG x)]
 
 -- Heap of data type metadata
-instance GAlg a => GAlg (M1 D c a) where
+instance GAlg m a => GAlg m (M1 D c a) where
   algG (M1 x) = algG x
 
 -- Record selector metadata
-instance GAlg a => GAlg (M1 S c a) where
+instance GAlg m a => GAlg m (M1 S c a) where
   algG (M1 x) = algG x
 
 -- Primitive/value with kind *
-instance ADT a => GAlg (K1 i a) where
+instance ADT m a => GAlg m (K1 i a) where
   algG (K1 x) = [encode x]
 
 -- Sum type
-instance (GAlg a, GAlg b) => GAlg (a :+: b) where
+instance (GAlg m a, GAlg m b) => GAlg m (a :+: b) where
   algG (L1 x) = algG x
   algG (R1 x) = algG x
 
 -- Product type
-instance (GAlg a, GAlg b) => GAlg (a :*: b) where
+instance (GAlg m a, GAlg m b) => GAlg m (a :*: b) where
   algG (a :*: b) = algG a ++ algG b
 
 
 -- Constructing and expecting ADTs
 
 -- | Pattern representation.
-newtype Pat a = Pat {unPat :: Alg}
+newtype Pat m a = Pat {unPat :: Alg m}
 
 -- | A case in a pattern match.
-type Case m a b = (Pat a, m (Exp m b))
+type Case m a b = (Pat m a, m (Exp m b))
 
-(~>) :: (PatM m, ADT a) => a -> m (Exp m b) -> Case m a b
+(~>) :: (PatM m, ADT m a) => a -> m (Exp m b) -> Case m a b
 a ~> b = (pat a, b)
 infixr 0 ~>
 
-new :: (PatM m, ADT a) => a -> m (Exp m a)
+new :: (PatM m, ADT m a) => a -> m (Exp m a)
 new x = store' (encAlg x)
   where
     store' alg = do
@@ -120,7 +138,7 @@ new x = store' (encAlg x)
     go _ (Hole _) = do
       error "can't store holes, silly"
 
-matchOne :: PatM m => Exp m Ptr -> Alg -> Int -> m (Exp m Bool)
+matchOne :: PatM m => Exp m Ptr -> Alg m -> Int -> m (Exp m Bool)
 matchOne ptr pat off = do
   case pat of
     Prim p -> do
@@ -139,7 +157,7 @@ matchOne ptr pat off = do
           matchOne ptr' pat' 0
         conjunction ress
 
-match :: (PatM m, ADT a) => Exp m a -> [Case m a b] -> m (Exp m b)
+match :: (PatM m, ADT m a) => Exp m a -> [Case m a b] -> m (Exp m b)
 match scrut ((Pat p, s):cs) = do
   scrut' <- unwrap scrut
   matches <- matchOne scrut' p 0
@@ -151,9 +169,9 @@ match _ _ = do
 -- Building patterns and injecting terms
 
 -- | Build a pattern from an ADT.
-pat :: ADT a => a -> Pat a
+pat :: ADT m a => a -> Pat m a
 pat = Pat . encode
 
 -- | An unnamed wildcard.
-wc :: ADT a => a
-wc = throw $ PatEx $ Hole Nothing
+-- wc :: ADT m a => a
+-- wc = throw $ PatEx $ Hole Nothing
