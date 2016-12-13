@@ -21,11 +21,5 @@ Cons
 TODO
 ----
 * Get rid of a few methods from `PatM`.
-* Generalise pattern representation over per-EDSL primitive types.
-  - Probably can't be done without using exceptions for "type-checking"
-    injected terms.
-  - Might complicate things even further?
-* Second-best solution: simply use `(nbytes :: Int, value :: Word64)` as the
-  primitive type for everything.
-  - Current non-solution provides no real benefit over this, but complicates
-    the code quite a bit.
+* Investigate possibility to derive instance for ADT m a => ADT m (Exp a)
+  - Look into how this affects usefulness and generalizability if impossible
