@@ -31,9 +31,6 @@ data Stm a where
   -- Conditionals
   If     :: Exp Bool -> Stm (Exp a) -> Stm (Exp a) -> Stm (Exp a)
 
-  -- Untimely termination
-  Die    :: Stm (Exp a)
-
 instance Functor Stm where
   fmap f m = m >>= return . f
 
@@ -62,7 +59,6 @@ instance Pat.PatM Stm where
   conjunction = pure . foldr (.&&) true
   bool = pure . Bool
   setRef v x = Set (V v) x
-  die s = Print s >> Die
 
 -- | Inject an EDSL term into an ADT.
 inj :: ADT Stm (Exp a) => Exp a -> a

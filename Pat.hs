@@ -54,7 +54,6 @@ class (Typeable m, Num (Prim m), Monad m) => PatM m where
   conjunction :: [Exp m Bool] -> m (Exp m Bool)
   bool        :: Bool -> m (Exp m Bool)
   setRef      :: Name m -> Prim m -> m ()
-  die         :: String -> m (Exp m a)
 
 data PatEx where
   PatEx :: Typeable m => Alg m -> PatEx
@@ -165,14 +164,23 @@ matchOne ptr pat off = do
           matchOne ptr' pat' 0
         conjunction ress
 
-match :: (PatM m, ADT m a) => Exp m a -> [Case m a b] -> m (Exp m b)
-match scrut ((Pat p, s):cs) = do
+-- | Match with default; if no pattern matches, the first argument is returned.
+matchDef :: (PatM m, ADT m a) => Exp m b -> Exp m a -> [Case m a b] -> m (Exp m b)
+matchDef def scrut ((Pat p, s):cs) = do
   scrut' <- unwrap scrut
   matches <- matchOne scrut' p 0
-  ifThenElse matches s (match scrut cs)
-match _ _ = do
-  die "incomplete pattern match"
+  ifThenElse matches s ((matchDef def) scrut cs)
+matchDef def _ _ = do
+  return def
 
+-- | Match without default; no value is returned, so non-exhaustive patterns
+--   result in a no-op.
+match' :: (PatM m, ADT m a) => Exp m a -> [Case m a b] -> m ()
+match' scrut cases = do
+    f <- bool False
+    void $ matchDef f scrut $ map falseCase cases
+  where
+    falseCase = fmap (>> bool False)
 
 -- Building patterns and injecting terms
 

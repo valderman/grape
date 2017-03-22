@@ -4,8 +4,8 @@ module Grape
   ( ADT (..), Exp, Stm, Pat, Var, Bind
   , module Control.Monad
   , true, false, undef, (.==), (!=), (.>), (.<), (.>=), (.<=), not_
-  , printS, printN, scanN, if_, newRef, getRef, bye
-  , inj, wc, Grape.var, val, (~>), with, match, new
+  , printS, printN, scanN, if_, newRef, getRef
+  , inj, wc, Grape.var, val, (~>), with, match', matchDef, new
   , Grape.compile, Grape.compileAndRun
   ) where
 import Pat hiding (Exp)
@@ -42,9 +42,6 @@ getRef = Get
 
 setRef :: Var a -> Exp a -> Stm ()
 setRef = Set
-
-bye :: Stm (Exp a)
-bye = Die
 
 newtype Bind a = Bind {val :: Exp a}
 

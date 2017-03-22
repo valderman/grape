@@ -122,10 +122,6 @@ cgStm (If c th el) = do
   el' <- unlines . fst <$> capture (cgStm $ el >>= Set v)
   emit $ "if(" <> cgExp c <> "){\n" <> th' <> "} else {\n" <> el' <> "}"
   return (Var v)
-cgStm (Die) = do
-  cgStm $ Print "<suicide>"
-  emit $ "exit(1);"
-  return Undef
 
 cgProg :: Stm () -> String
 cgProg = wrap . runCGM . cg
