@@ -1,12 +1,15 @@
-{-# LANGUAGE GADTs, TypeOperators, FlexibleInstances, FlexibleContexts, DefaultSignatures, ScopedTypeVariables, TypeFamilies, MultiParamTypeClasses #-}
+{-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeOperators, FlexibleInstances, FlexibleContexts #-}
+{-# LANGUAGE DefaultSignatures, TypeFamilies, MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables #-}  -- For 'encode'
+{-# LANGUAGE UndecidableInstances #-} -- For Show instances
 module Pat where
 import Control.Exception
-import Data.Hashable
 import GHC.Generics
 import System.IO.Unsafe
 import Control.Monad
 import Data.Typeable
-import Data.Word
+import Data.Proxy
 
 type Name = Int
 
@@ -20,6 +23,16 @@ data Alg (m :: * -> *) where
   Prim :: Prim m -> Alg m
   Con  :: Prim m -> [Alg m] -> Alg m
   Hole :: Maybe Name -> Alg m -- TODO: Name is stupid; generalize!
+
+instance Show (Prim m) => Show (Alg m) where
+  show (Prim x)        = "Prim " ++ show x
+  show (Con t as)      = "Con " ++ show t ++ " " ++ show as
+  show (Hole (Just n)) = "Hole (Just " ++ show n ++ ")"
+  show (Hole Nothing)  = "Hole Nothing"
+
+-- | Create a hole for the given monad.
+hole :: Proxy m -> Maybe Name -> Alg m
+hole _ = Hole
 
 type Offset = Int
 
@@ -68,18 +81,22 @@ same _ _ = eqT :: Maybe (m1 :~: m2)
 class PatM m => ADT m a where
   encAlg :: a -> Alg m
   default encAlg :: (Generic a, GAlg m (Rep a)) => a -> Alg m
-  encAlg = head . algG . from
+  encAlg = head . flip algG 0 . from
+
+-- | Encode an algebraic value for the given EDSL monad.
+encAlgFor :: ADT m a => Proxy m -> a -> Alg m
+encAlgFor _ = encAlg
 
 class PatM m => GAlg m f where
-  algG :: f a -> [Alg m]
+  algG :: f a -> Int -> [Alg m]
 
 -- Constructor without arguments: M1 C case takes care of this
 instance PatM m => GAlg m U1 where
-  algG U1 = []
+  algG U1 _ = []
 
 -- Data constructor metadata: a value begins here
 instance (GAlg m a, Constructor c) => GAlg m (M1 C c a) where
-  algG (M1 x) = [Con (fromIntegral . hash $ conName (undefined :: M1 C c a ())) (algG x)]
+  algG (M1 x) tid = [Con (fromIntegral tid) (algG x 0)]
 
 -- Heap of data type metadata
 instance GAlg m a => GAlg m (M1 D c a) where
@@ -91,16 +108,16 @@ instance GAlg m a => GAlg m (M1 S c a) where
 
 -- Primitive/value with kind *
 instance ADT m a => GAlg m (K1 i a) where
-  algG (K1 x) = [encode x]
+  algG (K1 x) _ = [encode x]
 
 -- Sum type
 instance (GAlg m a, GAlg m b) => GAlg m (a :+: b) where
-  algG (L1 x) = algG x
-  algG (R1 x) = algG x
+  algG (L1 x) tid = algG x (tid*2)
+  algG (R1 x) tid = algG x (1+tid*2)
 
 -- Product type
 instance (GAlg m a, GAlg m b) => GAlg m (a :*: b) where
-  algG (a :*: b) = algG a ++ algG b
+  algG (a :*: b) _ = algG a 0 ++ algG b 0
 
 
 -- Constructing and expecting ADTs

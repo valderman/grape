@@ -1,4 +1,4 @@
--- | Compile Patsy programs.
+-- | Compile Grape programs.
 module Comp where
 import Control.Shell
 import Stm

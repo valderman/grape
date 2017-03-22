@@ -5,6 +5,7 @@ import Control.Exception
 import Pat hiding (Exp)
 import qualified Pat
 import Data.Word
+import Data.Proxy
 
 -- | Typed variables
 newtype Var a = V {varName :: Name}
@@ -67,11 +68,8 @@ not_ = (.== false)
 
 -- | Inject an EDSL term into an ADT.
 inj :: ADT StmM (Exp a) => Exp a -> a
-inj = throw . PatEx . asStmM . encAlg
+inj = throw . PatEx . encAlgFor (Proxy :: Proxy StmM)
 
 -- | A named wildcard.
 var :: ADT StmM a => Var a -> a
-var = throw . PatEx . asStmM . Hole . Just . varName
-
-asStmM :: Alg StmM -> Alg StmM
-asStmM = id
+var = throw . PatEx . hole (Proxy :: Proxy StmM) . Just . varName
