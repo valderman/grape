@@ -52,7 +52,7 @@ class (Typeable m, Num (Prim m), Monad m) => PatM m where
   ifThenElse  :: Exp m Bool -> m (Exp m a) -> m (Exp m a) -> m (Exp m a)
   equals      :: Prim m -> Prim m -> m (Exp m Bool)
   conjunction :: [Exp m Bool] -> m (Exp m Bool)
-  bool        :: Bool -> m (Exp m Bool)
+  bool        :: Proxy m -> Bool -> Exp m Bool
   setRef      :: Name m -> Prim m -> m ()
 
 data PatEx where
@@ -145,20 +145,20 @@ new = store' . encAlg
     go _ (Hole _) = do
       error "can't store holes, silly"
 
-matchOne :: PatM m => Prim m -> Alg m -> Int -> m (Exp m Bool)
+matchOne :: forall m. PatM m => Prim m -> Alg m -> Int -> m (Exp m Bool)
 matchOne ptr pat off = do
   case pat of
     Prim p -> do
       x <- load ptr off
       equals x p
     Hole Nothing -> do
-      bool True
+      pure (bool (Proxy :: Proxy m) True)
     Hole (Just n) -> do
-      load ptr off >>= setRef n >> bool True
+      load ptr off >>= setRef n >> pure (bool (Proxy :: Proxy m) True)
     Con t as -> do
       t' <- load ptr off
       eq <- equals t' t
-      flip (ifThenElse eq) (bool False) $ do
+      flip (ifThenElse eq) (pure (bool (Proxy :: Proxy m) False)) $ do
         ress <- forM (zip as [off+1 ..]) $ \(pat', off') -> do
           ptr' <- load ptr off'
           matchOne ptr' pat' 0
@@ -178,12 +178,11 @@ matchDef def scrut cases = do
 
 -- | Match without default; no value is returned, so non-exhaustive patterns
 --   result in a no-op.
-match' :: (PatM m, ADT m a) => Exp m a -> [Case m a b] -> m ()
-match' scrut cases = do
-    f <- bool False
-    void $ matchDef f scrut $ map falseCase cases
+match' :: forall m a b. (PatM m, ADT m a) => Exp m a -> [Case m a b] -> m ()
+match' scrut = void . matchDef false scrut . map (defCase false)
   where
-    falseCase = fmap (>> bool False)
+    false = bool (Proxy :: Proxy m) False
+    defCase def = fmap (>> pure def)
 
 -- Building patterns and injecting terms
 

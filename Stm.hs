@@ -57,7 +57,7 @@ instance Pat.PatM Stm where
   ifThenElse = If
   equals a b = pure $ a .== b
   conjunction = pure . foldr (.&&) true
-  bool = pure . Bool
+  bool _ = Bool
   setRef v x = Set (V v) x
 
 -- | Inject an EDSL term into an ADT.
