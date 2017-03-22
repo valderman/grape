@@ -11,8 +11,6 @@ import Control.Monad
 import Data.Typeable
 import Data.Proxy
 
-type Name = Int
-
 data Algebraic where
   Alg :: Typeable m => TypeRep -> Alg m -> Algebraic
 
@@ -22,16 +20,16 @@ data Algebraic where
 data Alg (m :: * -> *) where
   Prim :: Prim m -> Alg m
   Con  :: Prim m -> [Alg m] -> Alg m
-  Hole :: Maybe Name -> Alg m -- TODO: Name is stupid; generalize!
+  Hole :: Maybe (Name m) -> Alg m -- TODO: can we make this type safe somehow?
 
-instance Show (Prim m) => Show (Alg m) where
+instance (Show (Name m), Show (Prim m)) => Show (Alg m) where
   show (Prim x)        = "Prim " ++ show x
   show (Con t as)      = "Con " ++ show t ++ " " ++ show as
   show (Hole (Just n)) = "Hole (Just " ++ show n ++ ")"
   show (Hole Nothing)  = "Hole Nothing"
 
 -- | Create a hole for the given monad.
-hole :: Proxy m -> Maybe Name -> Alg m
+hole :: Proxy m -> Maybe (Name m) -> Alg m
 hole _ = Hole
 
 type Offset = Int
@@ -45,6 +43,7 @@ allocSize (Hole _)   = error "holes have no size, silly"
 -- TODO: this could probably be a lot smaller
 class (Typeable m, Num (Prim m), Monad m) => PatM m where
   type Exp m  :: * -> *
+  type Name m :: *
   type Prim m :: *
   unwrap      :: ADT m a => Exp m a -> m (Prim m)
   alloc       :: Int -> (Prim m -> m ()) -> m (Exp m a)
@@ -54,7 +53,7 @@ class (Typeable m, Num (Prim m), Monad m) => PatM m where
   equals      :: Prim m -> Prim m -> m (Exp m Bool)
   conjunction :: [Exp m Bool] -> m (Exp m Bool)
   bool        :: Bool -> m (Exp m Bool)
-  setRef      :: Name -> Prim m -> m ()
+  setRef      :: Name m -> Prim m -> m ()
   die         :: String -> m (Exp m a)
 
 data PatEx where

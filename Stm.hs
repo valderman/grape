@@ -1,13 +1,12 @@
-{-# LANGUAGE GADTs, TypeFamilies #-}
+{-# LANGUAGE GADTs, TypeFamilies, FlexibleContexts #-}
 -- | Statement language: side effects and conditionals
---   TODO: abstract out a monad in which an ADT can be matched/serialized
---   into a type class
 module Stm where
 import Exp
+import Pat hiding (Exp, Alg)
 import qualified Pat
 import Control.Monad
-
-type instance StmM = Stm
+import Data.Proxy
+import Control.Exception
 
 data Stm a where
   -- Monad ops
@@ -47,8 +46,9 @@ instance Monad Stm where
   (>>=)  = Bind
 
 instance Pat.PatM Stm where
-  type Exp Stm = Exp
+  type Exp Stm  = Exp
   type Prim Stm = Exp Int
+  type Name Stm = Int
   unwrap (Alg (V n)) = pure (Var (V n))
   unwrap (Var (V n)) = pure (Var (V n))
   alloc n f = do
@@ -63,3 +63,11 @@ instance Pat.PatM Stm where
   bool = pure . Bool
   setRef v x = Set (V v) x
   die s = Print s >> Die
+
+-- | Inject an EDSL term into an ADT.
+inj :: ADT Stm (Exp a) => Exp a -> a
+inj = throw . PatEx . encAlgFor (Proxy :: Proxy Stm)
+
+-- | A named wildcard.
+var :: ADT Stm a => Var a -> a
+var = throw . PatEx . hole (Proxy :: Proxy Stm) . Just . varName

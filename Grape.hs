@@ -49,7 +49,7 @@ bye = Die
 newtype Bind a = Bind {val :: Exp a}
 
 var :: ADT Stm a => Bind a -> a
-var (Bind (Var v)) = Exp.var v
+var (Bind (Var v)) = Stm.var v
 
 with :: (Bind a -> Stm b) -> Stm b
 with f = do

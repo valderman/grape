@@ -8,7 +8,7 @@ import Stm
 import Pat hiding (Exp, Alg (..))
 
 data Env = Env
-  { envNameSupply :: Name
+  { envNameSupply :: Name Stm
   , envStatements :: [String]
   }
 

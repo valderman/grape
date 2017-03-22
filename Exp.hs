@@ -1,14 +1,9 @@
-{-# LANGUAGE GADTs, FlexibleInstances, FlexibleContexts, TypeFamilies #-}
+{-# LANGUAGE GADTs, FlexibleInstances #-}
 -- | Expression and pattern representations.
 module Exp where
-import Control.Exception
-import Pat hiding (Exp)
-import qualified Pat
-import Data.Word
-import Data.Proxy
 
 -- | Typed variables
-newtype Var a = V {varName :: Name}
+newtype Var a = V {varName :: Int}
 
 -- | Binary operators
 data BOp a b where
@@ -25,8 +20,6 @@ data BOp a b where
   Le  :: BOp a    Bool
   And :: BOp Bool Bool
   Or  :: BOp Bool Bool
-
-type family StmM :: * -> *
 
 -- | Expression language
 data Exp a where
@@ -65,11 +58,3 @@ not_ = (.== false)
 
 (.>), (.<), (.>=), (.<=), (.==), (!=) :: Exp a -> Exp a -> Exp Bool
 [(.>), (.<), (.>=), (.<=), (.==), (!=)] = map BOp [Gt, Lt, Ge, Le, Eq, Neq]
-
--- | Inject an EDSL term into an ADT.
-inj :: ADT StmM (Exp a) => Exp a -> a
-inj = throw . PatEx . encAlgFor (Proxy :: Proxy StmM)
-
--- | A named wildcard.
-var :: ADT StmM a => Var a -> a
-var = throw . PatEx . hole (Proxy :: Proxy StmM) . Just . varName
