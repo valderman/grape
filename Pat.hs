@@ -18,11 +18,11 @@ data Algebraic where
 --   an algebraic constructor + arguments, or an optionally named hole.
 --   Holes are only OK in patterns.
 data Alg (m :: * -> *) where
-  Prim :: Prim m -> Alg m
-  Con  :: Prim m -> [Alg m] -> Alg m
+  Prim :: PrimExp m -> Alg m
+  Con  :: PrimExp m -> [Alg m] -> Alg m
   Hole :: Maybe (Name m) -> Alg m -- TODO: can we make this type safe somehow?
 
-instance (Show (Name m), Show (Prim m)) => Show (Alg m) where
+instance (Show (Name m), Show (PrimExp m)) => Show (Alg m) where
   show (Prim x)        = "Prim " ++ show x
   show (Con t as)      = "Con " ++ show t ++ " " ++ show as
   show (Hole (Just n)) = "Hole (Just " ++ show n ++ ")"
@@ -40,20 +40,27 @@ allocSize (Prim _)   = 1
 allocSize (Con _ as) = length as + 1
 allocSize (Hole _)   = error "holes have no size, silly"
 
+type PrimExp m = Exp m (Prim m)
+
 -- TODO: this could probably be a lot smaller
-class (Typeable m, Num (Prim m), Monad m) => PatM m where
+class (Typeable m, Num (PrimExp m), Monad m) => PatM m where
   type Exp m  :: * -> *
   type Name m :: *
   type Prim m :: *
-  unwrap      :: ADT m a => Exp m a -> m (Prim m)
-  alloc       :: Int -> (Prim m -> m ()) -> m (Exp m a)
-  store       :: Prim m -> Offset -> Prim m -> m ()
-  load        :: Prim m -> Offset -> m (Prim m)
-  ifThenElse  :: Exp m Bool -> m (Exp m a) -> m (Exp m a) -> m (Exp m a)
-  equals      :: Prim m -> Prim m -> m (Exp m Bool)
-  conjunction :: [Exp m Bool] -> m (Exp m Bool)
-  bool        :: Proxy m -> Bool -> Exp m Bool
-  setRef      :: Name m -> Prim m -> m ()
+  unwrap      :: ADT m a => Exp m a -> m (PrimExp m)
+  alloc       :: Int -> (PrimExp m -> m ()) -> m (Exp m a)
+  store       :: PrimExp m -> Offset -> PrimExp m -> m ()
+  load        :: PrimExp m -> Offset -> m (PrimExp m)
+  ifThenElse  :: PrimExp m -> m (Exp m a) -> m (Exp m a) -> m (Exp m a)
+  equals      :: PrimExp m -> PrimExp m -> m (PrimExp m)
+  setRef      :: Name m -> PrimExp m -> m ()
+
+  conjunction :: [PrimExp m] -> m (PrimExp m)
+  conjunction (x:xs) = do
+    res <- x `equals` (0 :: PrimExp m)
+    ifThenElse res (pure (0 :: PrimExp m)) (conjunction xs)
+  conjunction [] = do
+    pure (1 :: PrimExp m)
 
 data PatEx where
   PatEx :: Typeable m => Alg m -> PatEx
@@ -145,24 +152,27 @@ new = store' . encAlg
     go _ (Hole _) = do
       error "can't store holes, silly"
 
-matchOne :: forall m. PatM m => Prim m -> Alg m -> Int -> m (Exp m Bool)
+matchOne :: forall m. PatM m => PrimExp m -> Alg m -> Int -> m (PrimExp m)
 matchOne ptr pat off = do
   case pat of
     Prim p -> do
       x <- load ptr off
       equals x p
     Hole Nothing -> do
-      pure (bool (Proxy :: Proxy m) True)
+      pure true
     Hole (Just n) -> do
-      load ptr off >>= setRef n >> pure (bool (Proxy :: Proxy m) True)
+      load ptr off >>= setRef n >> pure false
     Con t as -> do
       t' <- load ptr off
       eq <- equals t' t
-      flip (ifThenElse eq) (pure (bool (Proxy :: Proxy m) False)) $ do
+      flip (ifThenElse eq) (pure false) $ do
         ress <- forM (zip as [off+1 ..]) $ \(pat', off') -> do
           ptr' <- load ptr off'
           matchOne ptr' pat' 0
         conjunction ress
+  where
+    true = 1 :: PrimExp m
+    false = 0 :: PrimExp m
 
 -- | Match with default; if no pattern matches, the first argument is returned.
 matchDef :: (PatM m, ADT m a) => Exp m b -> Exp m a -> [Case m a b] -> m (Exp m b)
@@ -181,7 +191,7 @@ matchDef def scrut cases = do
 match' :: forall m a b. (PatM m, ADT m a) => Exp m a -> [Case m a b] -> m ()
 match' scrut = void . matchDef false scrut . map (defCase false)
   where
-    false = bool (Proxy :: Proxy m) False
+    false = 0 :: PrimExp m
     defCase def = fmap (>> pure def)
 
 -- Building patterns and injecting terms

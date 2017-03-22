@@ -44,7 +44,7 @@ instance Monad Stm where
 
 instance Pat.PatM Stm where
   type Exp Stm  = Exp
-  type Prim Stm = Exp Int
+  type Prim Stm = Int
   type Name Stm = Int
   unwrap (Alg (V n)) = pure (Var (V n))
   unwrap (Var (V n)) = pure (Var (V n))
@@ -54,10 +54,8 @@ instance Pat.PatM Stm where
     return (Alg v)
   store = Write
   load = Read
-  ifThenElse = If
-  equals a b = pure $ a .== b
-  conjunction = pure . foldr (.&&) true
-  bool _ = Bool
+  ifThenElse c = If (i2b c)
+  equals a b = pure $ b2i $ a .== b
   setRef v x = Set (V v) x
 
 -- | Inject an EDSL term into an ADT.

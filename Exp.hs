@@ -41,6 +41,14 @@ instance Num (Exp Int) where
   (-)         = BOp Sub
   (*)         = BOp Mul
 
+i2b :: Exp Int -> Exp Bool
+i2b (Const 0) = Bool False
+i2b _         = Bool True
+
+b2i :: Exp Bool -> Exp Int
+b2i (Bool True)  = Const 1
+b2i (Bool False) = Const 0
+
 undef :: Exp a
 undef = Undef
 
