@@ -49,7 +49,6 @@ instance Monad Stm where
 instance Pat.PatM Stm where
   type Exp Stm = Exp
   type Prim Stm = Exp Int
-  tagToPrim = pure . Const
   unwrap (Alg (V n)) = pure (Var (V n))
   unwrap (Var (V n)) = pure (Var (V n))
   alloc n f = do

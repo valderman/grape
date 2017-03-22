@@ -9,7 +9,6 @@ import Data.Typeable
 import Data.Word
 
 type Name = Int
-type Tag = Int
 
 data Algebraic where
   Alg :: Typeable m => TypeRep -> Alg m -> Algebraic
@@ -19,7 +18,7 @@ data Algebraic where
 --   Holes are only OK in patterns.
 data Alg (m :: * -> *) where
   Prim :: Prim m -> Alg m
-  Con  :: Tag -> [Alg m] -> Alg m
+  Con  :: Prim m -> [Alg m] -> Alg m
   Hole :: Maybe Name -> Alg m -- TODO: Name is stupid; generalize!
 
 type Offset = Int
@@ -31,10 +30,9 @@ allocSize (Con _ as) = length as + 1
 allocSize (Hole _)   = error "holes have no size, silly"
 
 -- TODO: this could probably be a lot smaller
-class Monad m => PatM m where
+class (Typeable m, Num (Prim m), Monad m) => PatM m where
   type Exp m  :: * -> *
   type Prim m :: *
-  tagToPrim   :: Tag -> m (Prim m)
   unwrap      :: ADT m a => Exp m a -> m (Prim m)
   alloc       :: Int -> (Prim m -> m ()) -> m (Exp m a)
   store       :: Prim m -> Offset -> Prim m -> m ()
@@ -67,21 +65,21 @@ same :: forall m1 m2. (Typeable m1, Typeable m2)
      => Alg (m1 :: * -> *) -> Proxy (m2 :: * -> *) -> Maybe (m1 :~: m2)
 same _ _ = eqT :: Maybe (m1 :~: m2)
 
-class Typeable m => ADT m a where
+class PatM m => ADT m a where
   encAlg :: a -> Alg m
   default encAlg :: (Generic a, GAlg m (Rep a)) => a -> Alg m
   encAlg = head . algG . from
 
-class GAlg m f where
+class PatM m => GAlg m f where
   algG :: f a -> [Alg m]
 
 -- Constructor without arguments: M1 C case takes care of this
-instance GAlg m U1 where
+instance PatM m => GAlg m U1 where
   algG U1 = []
 
 -- Data constructor metadata: a value begins here
 instance (GAlg m a, Constructor c) => GAlg m (M1 C c a) where
-  algG (M1 x) = [Con (hash $ conName (undefined :: M1 C c a ())) (algG x)]
+  algG (M1 x) = [Con (fromIntegral . hash $ conName (undefined :: M1 C c a ())) (algG x)]
 
 -- Heap of data type metadata
 instance GAlg m a => GAlg m (M1 D c a) where
@@ -126,7 +124,7 @@ new = store' . encAlg
 
     go ptr (Prim p) = store ptr 0 p
     go ptr (Con t as) = do
-      store ptr 0 =<< tagToPrim t
+      store ptr 0 t
       ptrs <- mapM (store' >=> unwrap) as
       zipWithM_ (store ptr) [1..] ptrs
     go _ (Hole _) = do
@@ -144,7 +142,7 @@ matchOne ptr pat off = do
       load ptr off >>= setRef n >> bool True
     Con t as -> do
       t' <- load ptr off
-      eq <- equals t' =<< tagToPrim t
+      eq <- equals t' t
       flip (ifThenElse eq) (bool False) $ do
         ress <- forM (zip as [off+1 ..]) $ \(pat', off') -> do
           ptr' <- load ptr off'

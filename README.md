@@ -32,7 +32,7 @@ TODO
   - Resulting sum struct needs to be the union of its parts.
   - Reuse parts.
   - Wastes memory in pathological cases, so explain about unions when doing it
-  - in C.
+    in C.
   - In JS, unions can be faked by just not creating the fields in question.
   - Would solve bug where `Exp Int` might be either an actual int or a
     pointer to one without having to think about it.
