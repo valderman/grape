@@ -166,12 +166,15 @@ matchOne ptr pat off = do
 
 -- | Match with default; if no pattern matches, the first argument is returned.
 matchDef :: (PatM m, ADT m a) => Exp m b -> Exp m a -> [Case m a b] -> m (Exp m b)
-matchDef def scrut ((Pat p, s):cs) = do
-  scrut' <- unwrap scrut
-  matches <- matchOne scrut' p 0
-  ifThenElse matches s ((matchDef def) scrut cs)
-matchDef def _ _ = do
-  return def
+matchDef def scrut cases = do
+    scrut' <- unwrap scrut
+    go scrut' cases
+  where
+    go scrut' ((Pat p, s) : cs) = do
+      matches <- matchOne scrut' p 0
+      ifThenElse matches s (go scrut' cs)
+    go _ _ = do
+      return def
 
 -- | Match without default; no value is returned, so non-exhaustive patterns
 --   result in a no-op.
