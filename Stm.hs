@@ -60,8 +60,8 @@ instance Pat.PatM Stm where
 
 -- | Inject an EDSL term into an ADT.
 inj :: Algebraic Stm (Exp a) => Exp a -> a
-inj = throw . PatEx . encAlgFor (Proxy :: Proxy Stm)
+inj = injFor (Proxy :: Proxy Stm)
 
 -- | A named wildcard.
 var :: Algebraic Stm a => Var a -> a
-var = throw . PatEx . hole (Proxy :: Proxy Stm) . Just . varName
+var = untypedVarFor (Proxy :: Proxy Stm) . varName

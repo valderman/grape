@@ -25,10 +25,6 @@ instance (Show (Name m), Show (PrimExp m)) => Show (Alg m) where
   show (Hole (Just n)) = "Hole (Just " ++ show n ++ ")"
   show (Hole Nothing)  = "Hole Nothing"
 
--- | Create a hole for the given monad.
-hole :: Proxy m -> Maybe (Name m) -> Alg m
-hole _ = Hole
-
 type Offset = Int
 
 -- | How much memory is needed by the constructor and pointers to arguments?
@@ -122,7 +118,7 @@ instance (GAlg m a, GAlg m b) => GAlg m (a :*: b) where
   algG (a :*: b) _ = algG a 0 ++ algG b 0
 
 
--- Constructing and expecting ADTs
+-- Constructing and inpecting ADTs
 
 -- | Pattern representation.
 newtype Pat m a = Pat {unPat :: Alg m}
@@ -191,6 +187,7 @@ match' scrut = void . matchDef false scrut . map (defCase false)
     false = 0 :: PrimExp m
     defCase def = fmap (>> pure def)
 
+
 -- Building patterns and injecting terms
 
 -- | Build a pattern from an ADT.
@@ -198,5 +195,13 @@ pat :: Algebraic m a => a -> Pat m a
 pat = Pat . encode
 
 -- | An unnamed wildcard, for the monad determined by the given proxy.
-wcByProxy :: forall m a. Algebraic m a => Proxy m -> a
-wcByProxy _ = throw $ PatEx (Hole Nothing :: Alg m)
+wcFor :: forall m a. Algebraic m a => Proxy m -> a
+wcFor _ = throw $ PatEx (Hole Nothing :: Alg m)
+
+-- | Inject a basic EDSL term into an ADT.
+injFor :: Algebraic m (Exp m a) => Proxy m -> Exp m a -> a
+injFor p = throw . PatEx . encAlgFor p
+
+-- | Inject an untyped named wildcard for the given EDSL.
+untypedVarFor :: forall m a. Algebraic m a => Proxy m -> Name m -> a
+untypedVarFor _ = throw . PatEx . (Hole :: Maybe (Name m) -> Alg m) . Just
