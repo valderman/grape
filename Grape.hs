@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses, FlexibleContexts #-}
--- | Grape: Generic Reification of ADTs and Patterns for EDSLs
+-- | Grape: Generic Reification of Algebraics and Patterns for EDSLs
 module Grape
-  ( ADT (..), Exp, Stm, Pat, Var, Bind
+  ( Algebraic (..), Exp, Stm, Pat, Var, Bind
   , module Control.Monad
   , true, false, undef, (.==), (!=), (.>), (.<), (.>=), (.<=), not_
   , printS, printN, scanN, if_, newRef, getRef
@@ -45,7 +45,7 @@ setRef = Set
 
 newtype Bind a = Bind {val :: Exp a}
 
-var :: ADT Stm a => Bind a -> a
+var :: Algebraic Stm a => Bind a -> a
 var (Bind (Var v)) = Stm.var v
 
 with :: (Bind a -> Stm b) -> Stm b
@@ -53,15 +53,15 @@ with f = do
   x <- newRef undef
   f (Bind $ Var x)
 
-instance ADT Stm (Exp Int) where encAlg = Pat.Prim
-instance ADT Stm (Exp Bool) where encAlg = Pat.Prim . B2I
+instance Algebraic Stm (Exp Int) where encAlg = Pat.Prim
+instance Algebraic Stm (Exp Bool) where encAlg = Pat.Prim . B2I
 
-instance ADT Stm Int where encAlg = Pat.Prim . Const
-instance ADT Stm Bool where encAlg = Pat.Prim . B2I . Bool
+instance Algebraic Stm Int where encAlg = Pat.Prim . Const
+instance Algebraic Stm Bool where encAlg = Pat.Prim . B2I . Bool
 
-instance ADT Stm a => ADT Stm (Maybe a)
-instance (ADT Stm a, ADT Stm b) => ADT Stm (Either a b)
+instance Algebraic Stm a => Algebraic Stm (Maybe a)
+instance (Algebraic Stm a, Algebraic Stm b) => Algebraic Stm (Either a b)
 
 -- | An unnamed wildcard.
-wc :: ADT Stm a => a
+wc :: Algebraic Stm a => a
 wc = wcByProxy (Proxy :: Proxy Stm)

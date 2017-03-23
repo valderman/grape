@@ -59,9 +59,9 @@ instance Pat.PatM Stm where
   setRef v x = Set (V v) x
 
 -- | Inject an EDSL term into an ADT.
-inj :: ADT Stm (Exp a) => Exp a -> a
+inj :: Algebraic Stm (Exp a) => Exp a -> a
 inj = throw . PatEx . encAlgFor (Proxy :: Proxy Stm)
 
 -- | A named wildcard.
-var :: ADT Stm a => Var a -> a
+var :: Algebraic Stm a => Var a -> a
 var = throw . PatEx . hole (Proxy :: Proxy Stm) . Just . varName

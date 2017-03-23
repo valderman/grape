@@ -11,9 +11,6 @@ import Control.Monad
 import Data.Typeable
 import Data.Proxy
 
-data Algebraic where
-  Alg :: Typeable m => TypeRep -> Alg m -> Algebraic
-
 -- | Encoding of an algebraic type or pattern: can be either a primitive value,
 --   an algebraic constructor + arguments, or an optionally named hole.
 --   Holes are only OK in patterns.
@@ -47,7 +44,7 @@ class (Typeable m, Num (PrimExp m), Monad m) => PatM m where
   type Exp m  :: * -> *
   type Name m :: *
   type Prim m :: *
-  unwrap      :: ADT m a => Exp m a -> m (PrimExp m)
+  unwrap      :: Algebraic m a => Exp m a -> m (PrimExp m)
   alloc       :: Int -> (PrimExp m -> m ()) -> m (Exp m a)
   store       :: PrimExp m -> Offset -> PrimExp m -> m ()
   load        :: PrimExp m -> Offset -> m (PrimExp m)
@@ -69,7 +66,7 @@ instance Show PatEx where
 instance Exception PatEx
 
 -- | Encode an ADT as a pattern.
-encode :: forall (m :: * -> *) a. ADT m a => a -> Alg m
+encode :: forall (m :: * -> *) a. Algebraic m a => a -> Alg m
 encode x = unsafePerformIO $ do
   epat <- try $ pure $! encAlg $! x
   case epat of
@@ -83,13 +80,13 @@ same :: forall m1 m2. (Typeable m1, Typeable m2)
      => Alg (m1 :: * -> *) -> Proxy (m2 :: * -> *) -> Maybe (m1 :~: m2)
 same _ _ = eqT :: Maybe (m1 :~: m2)
 
-class PatM m => ADT m a where
+class PatM m => Algebraic m a where
   encAlg :: a -> Alg m
   default encAlg :: (Generic a, GAlg m (Rep a)) => a -> Alg m
   encAlg = head . flip algG 0 . from
 
 -- | Encode an algebraic value for the given EDSL monad.
-encAlgFor :: ADT m a => Proxy m -> a -> Alg m
+encAlgFor :: Algebraic m a => Proxy m -> a -> Alg m
 encAlgFor _ = encAlg
 
 class PatM m => GAlg m f where
@@ -112,7 +109,7 @@ instance GAlg m a => GAlg m (M1 S c a) where
   algG (M1 x) = algG x
 
 -- Primitive/value with kind *
-instance ADT m a => GAlg m (K1 i a) where
+instance Algebraic m a => GAlg m (K1 i a) where
   algG (K1 x) _ = [encode x]
 
 -- Sum type
@@ -133,11 +130,11 @@ newtype Pat m a = Pat {unPat :: Alg m}
 -- | A case in a pattern match.
 type Case m a b = (Pat m a, m (Exp m b))
 
-(~>) :: (PatM m, ADT m a) => a -> m (Exp m b) -> Case m a b
+(~>) :: Algebraic m a => a -> m (Exp m b) -> Case m a b
 a ~> b = (pat a, b)
 infixr 0 ~>
 
-new :: forall m a. (PatM m, ADT m a) => a -> m (Exp m a)
+new :: forall m a. (PatM m, Algebraic m a) => a -> m (Exp m a)
 new = store' . encAlg
   where
     store' :: Alg m -> m (Exp m a)
@@ -175,7 +172,7 @@ matchOne ptr pat off = do
     false = 0 :: PrimExp m
 
 -- | Match with default; if no pattern matches, the first argument is returned.
-matchDef :: (PatM m, ADT m a) => Exp m b -> Exp m a -> [Case m a b] -> m (Exp m b)
+matchDef :: (PatM m, Algebraic m a) => Exp m b -> Exp m a -> [Case m a b] -> m (Exp m b)
 matchDef def scrut cases = do
     scrut' <- unwrap scrut
     go scrut' cases
@@ -188,7 +185,7 @@ matchDef def scrut cases = do
 
 -- | Match without default; no value is returned, so non-exhaustive patterns
 --   result in a no-op.
-match' :: forall m a b. (PatM m, ADT m a) => Exp m a -> [Case m a b] -> m ()
+match' :: forall m a b. (PatM m, Algebraic m a) => Exp m a -> [Case m a b] -> m ()
 match' scrut = void . matchDef false scrut . map (defCase false)
   where
     false = 0 :: PrimExp m
@@ -197,9 +194,9 @@ match' scrut = void . matchDef false scrut . map (defCase false)
 -- Building patterns and injecting terms
 
 -- | Build a pattern from an ADT.
-pat :: ADT m a => a -> Pat m a
+pat :: Algebraic m a => a -> Pat m a
 pat = Pat . encode
 
 -- | An unnamed wildcard, for the monad determined by the given proxy.
-wcByProxy :: forall m a. ADT m a => Proxy m -> a
+wcByProxy :: forall m a. Algebraic m a => Proxy m -> a
 wcByProxy _ = throw $ PatEx (Hole Nothing :: Alg m)
