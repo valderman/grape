@@ -1,6 +1,7 @@
+import Pat
 import Grape
 
-readNum :: Stm (Exp (Maybe Int))
+readNum :: Stm (AlgExp Stm (Maybe Int))
 readNum = do
   val <- scanN
   if_ (val .== 0)

@@ -3,7 +3,12 @@
 {-# LANGUAGE DefaultSignatures, TypeFamilies, MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}  -- For 'encode'
 {-# LANGUAGE UndecidableInstances #-} -- For Show instances
-module Pat where
+module Pat
+  ( Algebraic (..), PatM (..)
+  , ADT (..), PrimExp, AlgExp, Pat, Case
+  , match', matchDef, (~>), new
+  , pat, wcFor, injFor, untypedVarFor
+  ) where
 import Control.Exception
 import GHC.Generics
 import System.IO.Unsafe
@@ -27,6 +32,8 @@ instance (Show (Name m), Show (PrimExp m)) => Show (Alg m) where
 
 type Offset = Int
 
+newtype ADT m a = ADT (PrimExp m)
+
 -- | How much memory is needed by the constructor and pointers to arguments?
 allocSize :: Alg m -> Int
 allocSize (Prim _)   = 1
@@ -34,14 +41,15 @@ allocSize (Con _ as) = length as + 1
 allocSize (Hole _)   = error "holes have no size, silly"
 
 type PrimExp m = Exp m (Prim m)
+type AlgExp m a = Exp m (ADT m a)
 
 -- TODO: this could probably be a lot smaller
 class (Typeable m, Num (PrimExp m), Monad m) => PatM m where
   type Exp m  :: * -> *
   type Name m :: *
   type Prim m :: *
-  unwrap      :: Algebraic m a => Exp m a -> m (PrimExp m)
-  alloc       :: Int -> (PrimExp m -> m ()) -> m (Exp m a)
+  unwrap      :: Algebraic m a => AlgExp m a -> m (PrimExp m)
+  alloc       :: Int -> (PrimExp m -> m ()) -> m (AlgExp m a)
   store       :: PrimExp m -> Offset -> PrimExp m -> m ()
   load        :: PrimExp m -> Offset -> m (PrimExp m)
   ifThenElse  :: PrimExp m -> m (Exp m a) -> m (Exp m a) -> m (Exp m a)
@@ -80,6 +88,9 @@ class PatM m => Algebraic m a where
   encAlg :: a -> Alg m
   default encAlg :: (Generic a, GAlg m (Rep a)) => a -> Alg m
   encAlg = head . flip algG 0 . from
+
+instance {-# OVERLAPPABLE #-} (PatM m, PrimExp m ~ prim) => Algebraic m prim where
+  encAlg = Prim
 
 -- | Encode an algebraic value for the given EDSL monad.
 encAlgFor :: Algebraic m a => Proxy m -> a -> Alg m
@@ -130,10 +141,10 @@ type Case m a b = (Pat m a, m b)
 a ~> b = (pat a, b)
 infixr 0 ~>
 
-new :: forall m a. (PatM m, Algebraic m a) => a -> m (Exp m a)
+new :: forall m a. (PatM m, Algebraic m a) => a -> m (AlgExp m a)
 new = store' . encAlg
   where
-    store' :: Alg m -> m (Exp m a)
+    store' :: Alg m -> m (AlgExp m a)
     store' alg = do
       alloc (allocSize alg) $ \ptr -> go ptr alg
 
@@ -168,7 +179,7 @@ matchOne ptr pat off = do
     false = 0 :: PrimExp m
 
 -- | Match with default; if no pattern matches, the first argument is returned.
-matchDef :: (PatM m, Algebraic m a) => Exp m b -> Exp m a -> [Case m a (Exp m b)] -> m (Exp m b)
+matchDef :: (PatM m, Algebraic m a) => Exp m b -> AlgExp m a -> [Case m a (Exp m b)] -> m (Exp m b)
 matchDef def scrut cases = do
     scrut' <- unwrap scrut
     go scrut' cases
@@ -181,7 +192,7 @@ matchDef def scrut cases = do
 
 -- | Match without default; no value is returned, so non-exhaustive patterns
 --   result in a no-op.
-match' :: forall m a b. (PatM m, Algebraic m a) => Exp m a -> [Case m a b] -> m ()
+match' :: forall m a b. (PatM m, Algebraic m a) => AlgExp m a -> [Case m a b] -> m ()
 match' scrut = void . matchDef false scrut . map (fmap (>> pure false))
   where false = 0 :: PrimExp m
 

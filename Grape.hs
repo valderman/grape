@@ -53,11 +53,10 @@ with f = do
   x <- newRef undef
   f (Bind $ Var x)
 
-instance Algebraic Stm (Exp Int) where encAlg = Pat.Prim
-instance Algebraic Stm (Exp Bool) where encAlg = Pat.Prim . B2I
+instance Algebraic Stm (Exp Bool) where encAlg = encAlg . B2I
 
-instance Algebraic Stm Int where encAlg = Pat.Prim . Const
-instance Algebraic Stm Bool where encAlg = Pat.Prim . B2I . Bool
+instance Algebraic Stm Int where encAlg = encAlg . Const
+instance Algebraic Stm Bool where encAlg = encAlg . Bool
 
 instance Algebraic Stm a => Algebraic Stm (Maybe a)
 instance (Algebraic Stm a, Algebraic Stm b) => Algebraic Stm (Either a b)
