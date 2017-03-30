@@ -64,4 +64,4 @@ instance (Algebraic Stm a, Algebraic Stm b) => Algebraic Stm (Either a b)
 
 -- | An unnamed wildcard.
 wc :: Algebraic Stm a => a
-wc = wcByProxy (Proxy :: Proxy Stm)
+wc = wcFor (Proxy :: Proxy Stm)

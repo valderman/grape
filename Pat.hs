@@ -124,9 +124,9 @@ instance (GAlg m a, GAlg m b) => GAlg m (a :*: b) where
 newtype Pat m a = Pat {unPat :: Alg m}
 
 -- | A case in a pattern match.
-type Case m a b = (Pat m a, m (Exp m b))
+type Case m a b = (Pat m a, m b)
 
-(~>) :: Algebraic m a => a -> m (Exp m b) -> Case m a b
+(~>) :: Algebraic m a => a -> m b -> Case m a b
 a ~> b = (pat a, b)
 infixr 0 ~>
 
@@ -168,7 +168,7 @@ matchOne ptr pat off = do
     false = 0 :: PrimExp m
 
 -- | Match with default; if no pattern matches, the first argument is returned.
-matchDef :: (PatM m, Algebraic m a) => Exp m b -> Exp m a -> [Case m a b] -> m (Exp m b)
+matchDef :: (PatM m, Algebraic m a) => Exp m b -> Exp m a -> [Case m a (Exp m b)] -> m (Exp m b)
 matchDef def scrut cases = do
     scrut' <- unwrap scrut
     go scrut' cases
@@ -182,10 +182,8 @@ matchDef def scrut cases = do
 -- | Match without default; no value is returned, so non-exhaustive patterns
 --   result in a no-op.
 match' :: forall m a b. (PatM m, Algebraic m a) => Exp m a -> [Case m a b] -> m ()
-match' scrut = void . matchDef false scrut . map (defCase false)
-  where
-    false = 0 :: PrimExp m
-    defCase def = fmap (>> pure def)
+match' scrut = void . matchDef false scrut . map (fmap (>> pure false))
+  where false = 0 :: PrimExp m
 
 
 -- Building patterns and injecting terms
