@@ -1,6 +1,7 @@
 {-# LANGUAGE GADTs, FlexibleInstances #-}
 -- | Expression and pattern representations.
 module Exp where
+import Pat (ADT)
 
 -- | Typed variables
 newtype Var a = V {varName :: Int}
@@ -29,7 +30,7 @@ data Exp a where
   I2B   :: Exp Int -> Exp Bool
   BOp   :: BOp a b -> Exp a -> Exp a -> Exp b
   Var   :: Var a -> Exp a
-  Alg   :: Var Int -> Exp a
+  Alg   :: Var Int -> Exp (ADT a)
   Undef :: Exp a
 
 instance Show (Exp Int) where

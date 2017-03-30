@@ -5,7 +5,7 @@
 {-# LANGUAGE UndecidableInstances #-} -- For Show instances
 module Pat
   ( Algebraic (..), PatM (..)
-  , ADT (..), PrimExp, AlgExp, Pat, Case
+  , ADT, PrimExp, AlgExp, Pat, Case
   , match', matchDef, (~>), new
   , pat, wcFor, injFor, untypedVarFor
   ) where
@@ -32,7 +32,7 @@ instance (Show (Name m), Show (PrimExp m)) => Show (Alg m) where
 
 type Offset = Int
 
-newtype ADT m a = ADT (PrimExp m)
+data ADT a
 
 -- | How much memory is needed by the constructor and pointers to arguments?
 allocSize :: Alg m -> Int
@@ -41,7 +41,7 @@ allocSize (Con _ as) = length as + 1
 allocSize (Hole _)   = error "holes have no size, silly"
 
 type PrimExp m = Exp m (Prim m)
-type AlgExp m a = Exp m (ADT m a)
+type AlgExp m a = Exp m (ADT a)
 
 -- TODO: this could probably be a lot smaller
 class (Typeable m, Num (PrimExp m), Monad m) => PatM m where
