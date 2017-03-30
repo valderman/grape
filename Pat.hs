@@ -154,7 +154,7 @@ matchOne ptr pat off = do
     Hole Nothing -> do
       pure true
     Hole (Just n) -> do
-      load ptr off >>= setRef n >> pure false
+      load ptr off >>= setRef n >> pure true
     Con t as -> do
       t' <- load ptr off
       eq <- equals t' t
