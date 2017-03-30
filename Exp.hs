@@ -26,6 +26,7 @@ data Exp a where
   Const :: Int -> Exp Int
   Bool  :: Bool -> Exp Bool
   B2I   :: Exp Bool -> Exp Int
+  I2B   :: Exp Int -> Exp Bool
   BOp   :: BOp a b -> Exp a -> Exp a -> Exp b
   Var   :: Var a -> Exp a
   Alg   :: Var Int -> Exp a
@@ -42,12 +43,10 @@ instance Num (Exp Int) where
   (*)         = BOp Mul
 
 i2b :: Exp Int -> Exp Bool
-i2b (Const 0) = Bool False
-i2b _         = Bool True
+i2b = I2B
 
 b2i :: Exp Bool -> Exp Int
-b2i (Bool True)  = Const 1
-b2i (Bool False) = Const 0
+b2i = B2I
 
 undef :: Exp a
 undef = Undef
