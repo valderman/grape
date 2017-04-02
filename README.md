@@ -47,4 +47,7 @@ TODO
   embedding. The latter doesn't, but might require more support on top of the
   embedding (i.e. conditionals where branches may return `ADT a` and not just
   `Exp m a`).
+* Get rid of `Exp`, since only `Exp m (ADT a)` and `Exp m (Prim m)` are ever
+  used. Users may as well get to specify `PrimExp` and `AlgExp` directly.
+* Use `Data.Dynamic` to get a bit more type safety for `Alg`?
 * Investigate changes needed to support Feldspar, Sunroof and SatPlus.
