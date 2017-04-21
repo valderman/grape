@@ -20,8 +20,8 @@ import Data.Proxy
 --   an algebraic constructor + arguments, or an optionally named hole.
 --   Holes are only OK in patterns.
 data Alg (m :: * -> *) where
-  Prim :: PrimExp m -> Alg m
-  Con  :: PrimExp m -> [Alg m] -> Alg m
+  Prim :: Prim m -> Alg m
+  Con  :: Prim m -> [Alg m] -> Alg m
   Hole :: Maybe (Name m) -> Alg m -- TODO: can we make this type safe somehow?
 
 instance (Show (Name m), Show (PrimExp m)) => Show (Alg m) where
@@ -32,34 +32,37 @@ instance (Show (Name m), Show (PrimExp m)) => Show (Alg m) where
 
 type Offset = Int
 
-data ADT a
+flatten :: Alg m -> [PrimExp m]
+flatten (Prim p)   = [p]
+flatten (Con t as) = t : concatMap flatten as
+flatten (Hole _)   = error "Can't flatten a hole!"
 
 -- | How much memory is needed by the constructor and pointers to arguments?
-allocSize :: Alg m -> Int
-allocSize (Prim _)   = 1
-allocSize (Con _ as) = length as + 1
-allocSize (Hole _)   = error "holes have no size, silly"
+size :: Alg m -> Int
+size (Prim _)   = 1
+size (Con _ as) = sum (map size as) + 1
+size (Hole _)   = error "holes have no size, silly"
 
-type PrimExp m = Exp m (Prim m)
-type AlgExp m a = Exp m (ADT a)
+-- TODO: type class for if-then-else
+class If c a where
+  if_ :: c -> a -> a -> a
 
 -- TODO: this could probably be a lot smaller
 class (Typeable m, Num (PrimExp m), Monad m) => PatM m where
-  type Exp m  :: * -> *
+  type ADT m  :: * -> *
   type Name m :: *
   type Prim m :: *
-  unwrap      :: Algebraic m a => AlgExp m a -> m (PrimExp m)
-  alloc       :: Int -> (PrimExp m -> m ()) -> m (AlgExp m a)
-  store       :: PrimExp m -> Offset -> PrimExp m -> m ()
-  load        :: PrimExp m -> Offset -> m (PrimExp m)
-  ifThenElse  :: PrimExp m -> m (Exp m a) -> m (Exp m a) -> m (Exp m a)
-  equals      :: PrimExp m -> PrimExp m -> m (PrimExp m)
-  setRef      :: Name m -> PrimExp m -> m ()
+  alloc       :: [Prim m] -> m (ADT m a)
+  index       :: ADT m a -> Offset -> m (Prim m)
+  slice       :: ADT m a -> Offset -> m (ADT m b)
+  ifThenElse  :: If (Prim m) (m a) => Prim m -> m a -> m a -> m a
+  equals      :: Prim m -> Prim m -> m (Prim m)
+  setRef      :: Name m -> ADT m a -> m ()
 
-  conjunction :: [PrimExp m] -> m (PrimExp m)
+  conjunction :: [Prim m] -> m (Prim m)
   conjunction (x:xs) = do
-    res <- x `equals` (0 :: PrimExp m)
-    ifThenElse res (pure (0 :: PrimExp m)) (conjunction xs)
+    res <- x `equals` (0 :: Prim m)
+    ifThenElse res (pure (0 :: Prim m)) (conjunction xs)
   conjunction [] = do
     pure (1 :: PrimExp m)
 
@@ -142,47 +145,37 @@ a ~> b = (pat a, b)
 infixr 0 ~>
 
 new :: forall m a. (PatM m, Algebraic m a) => a -> m (AlgExp m a)
-new = store' . encAlg
-  where
-    store' :: Alg m -> m (AlgExp m a)
-    store' alg = do
-      alloc (allocSize alg) $ \ptr -> go ptr alg
+new = alloc . (flatten :: Alg m -> [PrimExp m]) . encAlg
 
-    go ptr (Prim p) = store ptr 0 p
-    go ptr (Con t as) = do
-      store ptr 0 t
-      ptrs <- mapM (store' >=> unwrap) as
-      zipWithM_ (store ptr) [1..] ptrs
-    go _ (Hole _) = do
-      error "can't store holes, silly"
-
-matchOne :: forall m. PatM m => PrimExp m -> Alg m -> Int -> m (PrimExp m)
+matchOne :: forall m a. PatM m => AlgExp m a -> Alg m -> Int -> m (PrimExp m)
 matchOne ptr pat off = do
   case pat of
     Prim p -> do
-      x <- load ptr off
+      x <- index ptr off
       equals x p
     Hole Nothing -> do
       pure true
     Hole (Just n) -> do
-      load ptr off >>= setRef n >> pure true
+      error "TODO: the holes"
     Con t as -> do
-      t' <- load ptr off
+      t' <- index ptr off
       eq <- equals t' t
-      flip (ifThenElse eq) (pure false) $ do
-        ress <- forM (zip as [off+1 ..]) $ \(pat', off') -> do
-          ptr' <- load ptr off'
-          matchOne ptr' pat' 0
-        conjunction ress
+      ifThenElse eq
+        (matchArgs (off+1) as >>= conjunction)
+        (pure false)
   where
     true = 1 :: PrimExp m
     false = 0 :: PrimExp m
+    matchArgs off' (a:as) = do
+      a' <- slice ptr off'
+      x <- matchOne a' a 0
+      xs <- matchArgs (off' + size a) as
+      return (x:xs)
 
 -- | Match with default; if no pattern matches, the first argument is returned.
 matchDef :: (PatM m, Algebraic m a) => Exp m b -> AlgExp m a -> [Case m a (Exp m b)] -> m (Exp m b)
 matchDef def scrut cases = do
-    scrut' <- unwrap scrut
-    go scrut' cases
+    go scrut cases
   where
     go scrut' ((Pat p, s) : cs) = do
       matches <- matchOne scrut' p 0
