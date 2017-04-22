@@ -245,7 +245,7 @@ match' scrut = void . matchDef false scrut . map (fmap (>> pure false))
 
 -- | Build a pattern from an ADT.
 pat :: Algebraic m a => a -> Pat m a
-pat = Pat . encode
+pat = Pat . enc
 
 -- | An unnamed wildcard, for the monad determined by the given proxy.
 wcFor :: forall m a. Algebraic m a => Proxy m -> a
