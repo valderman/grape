@@ -95,7 +95,9 @@ class ( Monad m
   equals      :: Prim m -> Prim m -> m (Prim m)
 
   -- | Write an ADT value to an untyped reference.
-  setRef      :: Name m -> Either (Prim m) (ADT m a) -> m ()
+  --   If the given boolean is @True@, the given ADT value contains only a
+  --   single primitive.
+  setRef      :: Bool -> Name m -> ADT m a -> m ()
 
   -- | Boolean conjunction over the language's primitive type.
   --   As with 'equals', @0@/@1@ is used to represent @False@/@True@.
@@ -202,9 +204,7 @@ matchOne ptr pat off = do
     Hole Nothing -> do
       pure true
     Hole (Just (isPrim, n)) -> do
-      if isPrim
-        then index ptr off >>= setRef n . Left
-        else slice ptr off >>= setRef n . Right
+      slice ptr off >>= setRef isPrim n
       pure true
     Con t as -> do
       t' <- index ptr off

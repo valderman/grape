@@ -66,8 +66,8 @@ instance Pat.PatM Stm where
     sequence_ [Write ptr i x | (i, x) <- zip [0..] xs]
     return (Alg v)
   equals a b = pure $ b2i $ a .== b
-  setRef v (Left x) = Set (V v) x
-  setRef v (Right x) = Set (V v) x
+  setRef True v x = index x 0 >>= Set (V v)
+  setRef _ v x    = Set (V v) x
   index (Alg v) off = Read (Var v) off
   index (Var (V v)) off = index (Alg (V v)) off
   slice (Alg v) off = do
@@ -84,4 +84,3 @@ var :: forall a. (Typeable a, Algebraic Stm a) => Var a -> a
 var = untypedVarFor (Proxy :: Proxy Stm) isPrim . varName
   where
     isPrim = typeRep (Proxy :: Proxy a) == typeRep (Proxy :: Proxy Int)
--}
