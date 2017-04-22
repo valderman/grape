@@ -1,4 +1,4 @@
-{-# LANGUAGE GADTs, TypeFamilies, FlexibleContexts #-}
+{-# LANGUAGE GADTs, TypeFamilies, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses #-}
 -- | Statement language: side effects and conditionals
 module Stm where
 import Exp
@@ -42,21 +42,36 @@ instance Monad Stm where
   return = Return
   (>>=)  = Bind
 
+instance If (Exp Int) (Stm (Exp a)) where
+  if_ c = If (i2b c)
+
+type instance Term Stm a = Exp a
+
+instance Algebraic Stm (Exp Int) where
+  encode = encodePrim
+
+-- | IMPORANT: the code generator of the example EDSL treats pointers as ints
+--   except when dereferencing, so pointer arithmetic must happen in increments
+--   of word size, not elements!
+wordSize :: Exp Int
+wordSize = 8
+
 instance Pat.PatM Stm where
-  type Exp Stm  = Exp
-  type Prim Stm = Int
+  type ADT Stm  = Exp
+  type Prim Stm = Exp Int
   type Name Stm = Int
-  unwrap (Alg (V n)) = pure (Var (V n))
-  unwrap (Var (V n)) = pure (Var (V n))
-  alloc n f = do
-    ptr@(Var v) <- Alloca n
-    f ptr
+  alloc xs = do
+    ptr@(Var v) <- Alloca (length xs)
+    sequence_ [Write ptr i x | (i, x) <- zip [0..] xs]
     return (Alg v)
-  store = Write
-  load = Read
-  ifThenElse c = If (i2b c)
   equals a b = pure $ b2i $ a .== b
   setRef v x = Set (V v) x
+  index (Alg v) off = Read (Var v) off
+  index (Var (V v)) off = index (Alg (V v)) off
+  slice (Alg v) off = do
+    v' <- NewRef (Var v + fromIntegral off*wordSize)
+    pure $ Alg v'
+  slice (Var (V v)) off = slice (Alg (V v)) off
 
 -- | Inject an EDSL term into an ADT.
 inj :: Algebraic Stm (Exp a) => Exp a -> a
@@ -65,3 +80,10 @@ inj = injFor (Proxy :: Proxy Stm)
 -- | A named wildcard.
 var :: Algebraic Stm a => Var a -> a
 var = untypedVarFor (Proxy :: Proxy Stm) . varName
+
+{-
+TODO: setRef will currently write pointer even when we're looking for primitive
+value! we could handle by doing alloc [x] = Alg x, but that would be weird and
+force ADT to behave as Either Array Prim, which is just weird.
+figure out how to write &alg to ref when needed, alg when needed
+-}

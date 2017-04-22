@@ -94,10 +94,10 @@ cgStm (Bind m f) = do
 cgStm (Print s) = do
   emit $ "printf(\"" <> s <> "\\n\");"
 cgStm (PrintN n) = do
-  emit $ "printf(\"%d\\n\", " <> cgExp n <> ");"
+  emit $ "printf(\"%lld\\n\", " <> cgExp n <> ");"
 cgStm (Scan) = do
   v <- newVar
-  emit $ "scanf(\"%d\", &" <> cgVar v <> ");"
+  emit $ "scanf(\"%lld\", &" <> cgVar v <> ");"
   return (Var v)
 cgStm (Set v x) = do
   emit $ cgVar v <> " = " <> cgExp x <> ";"

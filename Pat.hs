@@ -3,11 +3,27 @@
 {-# LANGUAGE DefaultSignatures, TypeFamilies, MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}  -- For 'encode'
 {-# LANGUAGE UndecidableInstances #-} -- For Show instances
+-- | Duct-taping ADTs and pattern matching onto arbitrary monadic EDSLs.
+--   To get pattern matching, an EDSL needs to do the following:
+--
+--     * Add the appropriate type family instances for 'Term'.
+--     * Instantiate 'If'.
+--     * Instantiate 'PatM'.
+--     * Instantiate 'Num' for the language's primitive type.
+--     * Instantiate 'Algebraic' for each base type of the EDSL.
+--       'encode' needs to encode any base type into the primitive type of the
+--       language. Once you have a value of the primitive type, use 'encodePrim'
+--       to encode it into the required 'Alg' type.
+--
+--   Note that the client language is responsible for generating 'Name's to bind
+--   in pattern matches, as well as some way of extracting the value bound to
+--   a name.
 module Pat
-  ( Algebraic (..), PatM (..)
-  , ADT, PrimExp, AlgExp, Pat, Case
+  ( Algebraic (..), PatM (..), If (..)
+  , Alg, Pat, Case, Term
   , match', matchDef, (~>), new
-  , pat, wcFor, injFor, untypedVarFor
+  , encodePrim
+  , pat, injFor, wcFor, untypedVarFor
   ) where
 import Control.Exception
 import GHC.Generics
@@ -24,7 +40,7 @@ data Alg (m :: * -> *) where
   Con  :: Prim m -> [Alg m] -> Alg m
   Hole :: Maybe (Name m) -> Alg m -- TODO: can we make this type safe somehow?
 
-instance (Show (Name m), Show (PrimExp m)) => Show (Alg m) where
+instance (Show (Name m), Show (Prim m)) => Show (Alg m) where
   show (Prim x)        = "Prim " ++ show x
   show (Con t as)      = "Con " ++ show t ++ " " ++ show as
   show (Hole (Just n)) = "Hole (Just " ++ show n ++ ")"
@@ -32,7 +48,7 @@ instance (Show (Name m), Show (PrimExp m)) => Show (Alg m) where
 
 type Offset = Int
 
-flatten :: Alg m -> [PrimExp m]
+flatten :: Alg m -> [Prim m]
 flatten (Prim p)   = [p]
 flatten (Con t as) = t : concatMap flatten as
 flatten (Hole _)   = error "Can't flatten a hole!"
@@ -43,28 +59,51 @@ size (Prim _)   = 1
 size (Con _ as) = sum (map size as) + 1
 size (Hole _)   = error "holes have no size, silly"
 
--- TODO: type class for if-then-else
 class If c a where
   if_ :: c -> a -> a -> a
 
--- TODO: this could probably be a lot smaller
-class (Typeable m, Num (PrimExp m), Monad m) => PatM m where
+class ( Typeable m
+      , Num (Prim m)
+      , Monad m
+      , If (Prim m) (m (Prim m))
+      ) => PatM m where
+  -- | The type of algebraic values in the language.
+  --
+  --   TODO: due to lack of type-level lambdas, ADT m a can't be, say, Exp (T a).
+  --   Look into a fix!
   type ADT m  :: * -> *
+
+  -- | An untyped reference in the client language.
   type Name m :: *
+
+  -- | The primitive type of the client language.
   type Prim m :: *
+
+  -- | Store a list of primitive values in the client language.
   alloc       :: [Prim m] -> m (ADT m a)
+
+  -- | Extract a value from an ADT.
+  --   This function should return the @n@th value of the list originally passed
+  --   to @alloc@ to create the given ADT value.
   index       :: ADT m a -> Offset -> m (Prim m)
+
+  -- | Drop the first @n@ elements of the given ADT value.
   slice       :: ADT m a -> Offset -> m (ADT m b)
-  ifThenElse  :: If (Prim m) (m a) => Prim m -> m a -> m a -> m a
+
+  -- | Boolean comparison. @0@ represents @False@, and @1@ represents @True@.
   equals      :: Prim m -> Prim m -> m (Prim m)
+
+  -- | Write an ADT value to an untyped reference.
   setRef      :: Name m -> ADT m a -> m ()
 
+  -- | Boolean conjunction over the language's primitive type.
+  --   As with 'equals', @0@/@1@ is used to represent @False@/@True@.
   conjunction :: [Prim m] -> m (Prim m)
   conjunction (x:xs) = do
     res <- x `equals` (0 :: Prim m)
-    ifThenElse res (pure (0 :: Prim m)) (conjunction xs)
+    if_ res (pure (0 :: Prim m)) (conjunction xs)
   conjunction [] = do
-    pure (1 :: PrimExp m)
+    pure (1 :: Prim m)
 
 data PatEx where
   PatEx :: Typeable m => Alg m -> PatEx
@@ -73,9 +112,9 @@ instance Show PatEx where
 instance Exception PatEx
 
 -- | Encode an ADT as a pattern.
-encode :: forall (m :: * -> *) a. Algebraic m a => a -> Alg m
-encode x = unsafePerformIO $ do
-  epat <- try $ pure $! encAlg $! x
+enc :: forall (m :: * -> *) a. Algebraic m a => a -> Alg m
+enc x = unsafePerformIO $ do
+  epat <- try $ pure $! encode $! x
   case epat of
     Right x' -> pure x'
     Left e@(PatEx x') ->
@@ -87,17 +126,22 @@ same :: forall m1 m2. (Typeable m1, Typeable m2)
      => Alg (m1 :: * -> *) -> Proxy (m2 :: * -> *) -> Maybe (m1 :~: m2)
 same _ _ = eqT :: Maybe (m1 :~: m2)
 
-class PatM m => Algebraic m a where
-  encAlg :: a -> Alg m
-  default encAlg :: (Generic a, GAlg m (Rep a)) => a -> Alg m
-  encAlg = head . flip algG 0 . from
+-- | A term of type @a@ in the language @m@.
+type family Term (m :: * -> *) a
 
-instance {-# OVERLAPPABLE #-} (PatM m, PrimExp m ~ prim) => Algebraic m prim where
-  encAlg = Prim
+class PatM m => Algebraic m a where
+  encode :: a -> Alg m
+  default encode :: (Generic a, GAlg m (Rep a)) => a -> Alg m
+  encode = head . flip algG 0 . from
+instance {-# OVERLAPPABLE #-} (PatM m, Generic a, GAlg m (Rep a)) => Algebraic m a
+
+-- | Encode a value of the primitive type for the language @m@.
+encodePrim :: (PatM m, Prim m ~ prim) => prim -> Alg m
+encodePrim = Prim
 
 -- | Encode an algebraic value for the given EDSL monad.
-encAlgFor :: Algebraic m a => Proxy m -> a -> Alg m
-encAlgFor _ = encAlg
+encodeFor :: Algebraic m a => Proxy m -> a -> Alg m
+encodeFor _ = encode
 
 class PatM m => GAlg m f where
   algG :: f a -> Int -> [Alg m]
@@ -120,7 +164,7 @@ instance GAlg m a => GAlg m (M1 S c a) where
 
 -- Primitive/value with kind *
 instance Algebraic m a => GAlg m (K1 i a) where
-  algG (K1 x) _ = [encode x]
+  algG (K1 x) _ = [enc x]
 
 -- Sum type
 instance (GAlg m a, GAlg m b) => GAlg m (a :+: b) where
@@ -144,10 +188,11 @@ type Case m a b = (Pat m a, m b)
 a ~> b = (pat a, b)
 infixr 0 ~>
 
-new :: forall m a. (PatM m, Algebraic m a) => a -> m (AlgExp m a)
-new = alloc . (flatten :: Alg m -> [PrimExp m]) . encAlg
+-- | Create a new algebraic value.
+new :: forall m a. (PatM m, Algebraic m a) => a -> m (ADT m a)
+new = alloc . (flatten :: Alg m -> [Prim m]) . encode
 
-matchOne :: forall m a. PatM m => AlgExp m a -> Alg m -> Int -> m (PrimExp m)
+matchOne :: forall m a. PatM m => ADT m a -> Alg m -> Int -> m (Prim m)
 matchOne ptr pat off = do
   case pat of
     Prim p -> do
@@ -156,38 +201,40 @@ matchOne ptr pat off = do
     Hole Nothing -> do
       pure true
     Hole (Just n) -> do
-      error "TODO: the holes"
+      slice ptr off >>= setRef n >> pure true
     Con t as -> do
       t' <- index ptr off
       eq <- equals t' t
-      ifThenElse eq
+      if_ eq
         (matchArgs (off+1) as >>= conjunction)
         (pure false)
   where
-    true = 1 :: PrimExp m
-    false = 0 :: PrimExp m
+    true = 1 :: Prim m
+    false = 0 :: Prim m
     matchArgs off' (a:as) = do
       a' <- slice ptr off'
       x <- matchOne a' a 0
       xs <- matchArgs (off' + size a) as
       return (x:xs)
+    matchArgs _ _ = do
+      return []
 
 -- | Match with default; if no pattern matches, the first argument is returned.
-matchDef :: (PatM m, Algebraic m a) => Exp m b -> AlgExp m a -> [Case m a (Exp m b)] -> m (Exp m b)
+matchDef :: (Algebraic m a, Algebraic m b, If (Prim m) (m b)) => b -> ADT m a -> [Case m a b] -> m b
 matchDef def scrut cases = do
     go scrut cases
   where
     go scrut' ((Pat p, s) : cs) = do
       matches <- matchOne scrut' p 0
-      ifThenElse matches s (go scrut' cs)
+      if_ matches s (go scrut' cs)
     go _ _ = do
       return def
 
 -- | Match without default; no value is returned, so non-exhaustive patterns
 --   result in a no-op.
-match' :: forall m a b. (PatM m, Algebraic m a) => AlgExp m a -> [Case m a b] -> m ()
+match' :: forall m a b. (PatM m, Algebraic m a, Algebraic m (Prim m)) => ADT m a -> [Case m a b] -> m ()
 match' scrut = void . matchDef false scrut . map (fmap (>> pure false))
-  where false = 0 :: PrimExp m
+  where false = 0 :: Prim m
 
 
 -- Building patterns and injecting terms
@@ -201,8 +248,8 @@ wcFor :: forall m a. Algebraic m a => Proxy m -> a
 wcFor _ = throw $ PatEx (Hole Nothing :: Alg m)
 
 -- | Inject a basic EDSL term into an ADT.
-injFor :: Algebraic m (Exp m a) => Proxy m -> Exp m a -> a
-injFor p = throw . PatEx . encAlgFor p
+injFor :: Algebraic m (Term m a) => Proxy m -> Term m a -> a
+injFor p = throw . PatEx . encodeFor p
 
 -- | Inject an untyped named wildcard for the given EDSL.
 untypedVarFor :: forall m a. Algebraic m a => Proxy m -> Name m -> a
