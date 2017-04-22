@@ -1,7 +1,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeOperators, FlexibleInstances, FlexibleContexts #-}
 {-# LANGUAGE DefaultSignatures, TypeFamilies, MultiParamTypeClasses #-}
-{-# LANGUAGE ScopedTypeVariables #-}  -- For 'encode'
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE UndecidableInstances #-} -- For Show instances
 -- | Duct-taping ADTs and pattern matching onto arbitrary monadic EDSLs.
 --   To get pattern matching, an EDSL needs to do the following:
@@ -19,7 +19,7 @@
 --   in pattern matches, as well as some way of extracting the value bound to
 --   a name.
 module Pat
-  ( Algebraic (..), PatM (..), If (..)
+  ( Typeable, Algebraic (..), PatM (..), If (..)
   , Alg, Pat, Case, Term
   , match', matchDef, (~>), new
   , encodePrim
@@ -38,7 +38,7 @@ import Data.Proxy
 data Alg (m :: * -> *) where
   Prim :: Prim m -> Alg m
   Con  :: Prim m -> [Alg m] -> Alg m
-  Hole :: Maybe (Name m) -> Alg m -- TODO: can we make this type safe somehow?
+  Hole :: Maybe (Bool, Name m) -> Alg m -- TODO: can we make this type safe somehow?
 
 instance (Show (Name m), Show (Prim m)) => Show (Alg m) where
   show (Prim x)        = "Prim " ++ show x
@@ -62,9 +62,10 @@ size (Hole _)   = error "holes have no size, silly"
 class If c a where
   if_ :: c -> a -> a -> a
 
-class ( Typeable m
+class ( Monad m
+      , Typeable m
+      , Typeable (Prim m)
       , Num (Prim m)
-      , Monad m
       , If (Prim m) (m (Prim m))
       ) => PatM m where
   -- | The type of algebraic values in the language.
@@ -94,7 +95,7 @@ class ( Typeable m
   equals      :: Prim m -> Prim m -> m (Prim m)
 
   -- | Write an ADT value to an untyped reference.
-  setRef      :: Name m -> ADT m a -> m ()
+  setRef      :: Name m -> Either (Prim m) (ADT m a) -> m ()
 
   -- | Boolean conjunction over the language's primitive type.
   --   As with 'equals', @0@/@1@ is used to represent @False@/@True@.
@@ -200,8 +201,11 @@ matchOne ptr pat off = do
       equals x p
     Hole Nothing -> do
       pure true
-    Hole (Just n) -> do
-      slice ptr off >>= setRef n >> pure true
+    Hole (Just (isPrim, n)) -> do
+      if isPrim
+        then index ptr off >>= setRef n . Left
+        else slice ptr off >>= setRef n . Right
+      pure true
     Con t as -> do
       t' <- index ptr off
       eq <- equals t' t
@@ -252,5 +256,8 @@ injFor :: Algebraic m (Term m a) => Proxy m -> Term m a -> a
 injFor p = throw . PatEx . encodeFor p
 
 -- | Inject an untyped named wildcard for the given EDSL.
-untypedVarFor :: forall m a. Algebraic m a => Proxy m -> Name m -> a
-untypedVarFor _ = throw . PatEx . (Hole :: Maybe (Name m) -> Alg m) . Just
+--   The proxy gives the type of the language, the boolean indicates whether
+--   the injected hole is primitive or not.
+untypedVarFor :: forall m a. (Typeable a, Algebraic m a) => Proxy m -> Bool -> Name m -> a
+untypedVarFor _ prim n =
+    throw . PatEx . (Hole :: Maybe (Bool, Name m) -> Alg m) . Just $ (prim, n)

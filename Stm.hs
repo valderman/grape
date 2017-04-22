@@ -1,4 +1,4 @@
-{-# LANGUAGE GADTs, TypeFamilies, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses #-}
+{-# LANGUAGE GADTs, TypeFamilies, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses, ScopedTypeVariables #-}
 -- | Statement language: side effects and conditionals
 module Stm where
 import Exp
@@ -7,6 +7,7 @@ import qualified Pat
 import Control.Monad
 import Data.Proxy
 import Control.Exception
+import Data.Typeable
 
 data Stm a where
   -- Monad ops
@@ -65,7 +66,8 @@ instance Pat.PatM Stm where
     sequence_ [Write ptr i x | (i, x) <- zip [0..] xs]
     return (Alg v)
   equals a b = pure $ b2i $ a .== b
-  setRef v x = Set (V v) x
+  setRef v (Left x) = Set (V v) x
+  setRef v (Right x) = Set (V v) x
   index (Alg v) off = Read (Var v) off
   index (Var (V v)) off = index (Alg (V v)) off
   slice (Alg v) off = do
@@ -78,12 +80,8 @@ inj :: Algebraic Stm (Exp a) => Exp a -> a
 inj = injFor (Proxy :: Proxy Stm)
 
 -- | A named wildcard.
-var :: Algebraic Stm a => Var a -> a
-var = untypedVarFor (Proxy :: Proxy Stm) . varName
-
-{-
-TODO: setRef will currently write pointer even when we're looking for primitive
-value! we could handle by doing alloc [x] = Alg x, but that would be weird and
-force ADT to behave as Either Array Prim, which is just weird.
-figure out how to write &alg to ref when needed, alg when needed
+var :: forall a. (Typeable a, Algebraic Stm a) => Var a -> a
+var = untypedVarFor (Proxy :: Proxy Stm) isPrim . varName
+  where
+    isPrim = typeRep (Proxy :: Proxy a) == typeRep (Proxy :: Proxy Int)
 -}

@@ -45,7 +45,7 @@ setRef = Set
 
 newtype Bind a = Bind {val :: Exp a}
 
-var :: Algebraic Stm a => Bind a -> a
+var :: (Typeable a, Algebraic Stm a) => Bind a -> a
 var (Bind (Var v)) = Stm.var v
 
 with :: (Bind a -> Stm b) -> Stm b
