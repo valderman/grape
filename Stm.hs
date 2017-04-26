@@ -79,6 +79,7 @@ instance Pat.PatM Stm where
     v' <- NewRef (Var v + fromIntegral off*wordSize)
     pure $ Alg v'
   slice (Var (V v)) off = slice (Alg (V v)) off
+  fromInt _ = fromIntegral
 
 -- | Inject an EDSL term into an ADT.
 inj :: Algebraic Stm (Exp a) => Exp a -> a

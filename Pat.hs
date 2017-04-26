@@ -60,7 +60,6 @@ class ( Monad m
       , Typeable m
       , Typeable (Prim m)
       , Typeable (ADT m)
-      , Num (Prim m)
       , If (Prim m) (m (Prim m))
       ) => PatM m where
   -- | The type of algebraic values in the client language.
@@ -95,14 +94,17 @@ class ( Monad m
   --   a type @a@ such that @Prim m == ADT m a@.
   setRef      :: Typeable a => Bool -> Dynamic -> ADT m a -> m ()
 
+  -- | Convert an into the client language's primitive type.
+  fromInt     :: Proxy m -> Int -> Prim m
+
   -- | Boolean conjunction over the language's primitive type.
   --   As with 'equals', @0@/@1@ is used to represent @False@/@True@.
   conjunction :: [Prim m] -> m (Prim m)
   conjunction (x:xs) = do
-    res <- x `equals` (0 :: Prim m)
-    if_ res (pure (0 :: Prim m)) (conjunction xs)
+    res <- x `equals` (fromInt (Proxy :: Proxy m) 0)
+    if_ res (pure (fromInt (Proxy :: Proxy m) 0)) (conjunction xs)
   conjunction [] = do
-    pure (1 :: Prim m)
+    pure (fromInt (Proxy :: Proxy m) 1)
 
 data PatEx where
   PatEx :: Typeable m => Alg m -> PatEx
@@ -151,7 +153,7 @@ instance PatM m => GAlg m U1 where
 
 -- Data constructor metadata: a value begins here
 instance (GAlg m a, Constructor c) => GAlg m (M1 C c a) where
-  algG (M1 x) tid = [Con (fromIntegral tid) (algG x 0)]
+  algG (M1 x) tid = [Con (fromInt (Proxy :: Proxy m) tid) (algG x 0)]
 
 -- Heap of data type metadata
 instance GAlg m a => GAlg m (M1 D c a) where
@@ -215,8 +217,8 @@ matchOne ptr pat off = do
         (matchArgs (off+1) as >>= conjunction)
         (pure false)
   where
-    true = 1 :: Prim m
-    false = 0 :: Prim m
+    true = fromInt (Proxy :: Proxy m) 1
+    false = fromInt (Proxy :: Proxy m) 0
     matchArgs off' (a:as) = do
       a' <- slice ptr off'
       x <- matchOne a' a 0
@@ -240,7 +242,7 @@ matchDef def scrut cases = do
 --   result in a no-op.
 match' :: forall m a b. (PatM m, Algebraic m a, Algebraic m (Prim m)) => ADT m a -> [Case m a b] -> m ()
 match' scrut = void . matchDef false scrut . map (fmap (>> pure false))
-  where false = 0 :: Prim m
+  where false = fromInt (Proxy :: Proxy m) 0
 
 
 -- Building patterns and injecting terms
