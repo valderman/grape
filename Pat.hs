@@ -1,8 +1,7 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE TypeOperators, FlexibleInstances, FlexibleContexts #-}
 {-# LANGUAGE DefaultSignatures, TypeFamilies, MultiParamTypeClasses #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE UndecidableInstances #-} -- For Show instances
+{-# LANGUAGE ScopedTypeVariables, UndecidableInstances #-}
 -- | Duct-taping ADTs and pattern matching onto arbitrary monadic EDSLs.
 --   To get pattern matching, an EDSL needs to do the following:
 --
@@ -19,18 +18,19 @@
 --   in pattern matches, as well as some way of extracting the value bound to
 --   a name.
 module Pat
-  ( Typeable, Algebraic (..), PatM (..), If (..)
+  ( Typeable, Dynamic, Algebraic (..), PatM (..), If (..)
   , Alg, Pat, Case, Term
   , match', matchDef, (~>), new
   , encodePrim
-  , pat, injFor, wcFor, untypedVarFor
+  , pat, injFor, wcFor, varFor
   ) where
 import Control.Exception
+import Control.Monad
+import Data.Dynamic
+import Data.Proxy
+import Data.Typeable
 import GHC.Generics
 import System.IO.Unsafe
-import Control.Monad
-import Data.Typeable
-import Data.Proxy
 
 -- | Encoding of an algebraic type or pattern: can be either a primitive value,
 --   an algebraic constructor + arguments, or an optionally named hole.
@@ -38,13 +38,7 @@ import Data.Proxy
 data Alg (m :: * -> *) where
   Prim :: Prim m -> Alg m
   Con  :: Prim m -> [Alg m] -> Alg m
-  Hole :: Maybe (Bool, Name m) -> Alg m -- TODO: can we make this type safe somehow?
-
-instance (Show (Name m), Show (Prim m)) => Show (Alg m) where
-  show (Prim x)        = "Prim " ++ show x
-  show (Con t as)      = "Con " ++ show t ++ " " ++ show as
-  show (Hole (Just n)) = "Hole (Just " ++ show n ++ ")"
-  show (Hole Nothing)  = "Hole Nothing"
+  Hole :: Maybe (Bool, Dynamic) -> Alg m
 
 type Offset = Int
 
@@ -65,20 +59,18 @@ class If c a where
 class ( Monad m
       , Typeable m
       , Typeable (Prim m)
+      , Typeable (ADT m)
       , Num (Prim m)
       , If (Prim m) (m (Prim m))
       ) => PatM m where
-  -- | The type of algebraic values in the language.
-  --
-  --   TODO: due to lack of type-level lambdas, ADT m a can't be, say, Exp (T a).
-  --   Look into a fix!
+  -- | The type of algebraic values in the client language.
   type ADT m  :: * -> *
-
-  -- | An untyped reference in the client language.
-  type Name m :: *
 
   -- | The primitive type of the client language.
   type Prim m :: *
+
+  -- | A typed reference in the client language.
+  type Ref m  :: * -> *
 
   -- | Store a list of primitive values in the client language.
   alloc       :: [Prim m] -> m (ADT m a)
@@ -89,15 +81,19 @@ class ( Monad m
   index       :: ADT m a -> Offset -> m (Prim m)
 
   -- | Drop the first @n@ elements of the given ADT value.
-  slice       :: ADT m a -> Offset -> m (ADT m b)
+  slice       :: ADT m a -> Offset -> m (ADT m a)
 
   -- | Boolean comparison. @0@ represents @False@, and @1@ represents @True@.
   equals      :: Prim m -> Prim m -> m (Prim m)
 
-  -- | Write an ADT value to an untyped reference.
+  -- | Write an ADT value to a dynamically typed reference.
   --   If the given boolean is @True@, the given ADT value contains only a
-  --   single primitive.
-  setRef      :: Bool -> Name m -> ADT m a -> m ()
+  --   single primitive. This allows the client language to use different
+  --   representations for ADTs that may be represented using a single primitive
+  --   value, and ADTs that need allocation.
+  --   This is pretty much necessary any language @m@ where there exists
+  --   a type @a@ such that @Prim m == ADT m a@.
+  setRef      :: Typeable a => Bool -> Dynamic -> ADT m a -> m ()
 
   -- | Boolean conjunction over the language's primitive type.
   --   As with 'equals', @0@/@1@ is used to represent @False@/@True@.
@@ -132,11 +128,11 @@ same _ _ = eqT :: Maybe (m1 :~: m2)
 -- | A term of type @a@ in the language @m@.
 type family Term (m :: * -> *) a
 
-class PatM m => Algebraic m a where
+class (Typeable a, PatM m) => Algebraic m a where
   encode :: a -> Alg m
   default encode :: (Generic a, GAlg m (Rep a)) => a -> Alg m
   encode = head . flip algG 0 . from
-instance {-# OVERLAPPABLE #-} (PatM m, Generic a, GAlg m (Rep a)) => Algebraic m a
+instance {-# OVERLAPPABLE #-} (Typeable a, PatM m, Generic a, GAlg m (Rep a)) => Algebraic m a
 
 -- | Encode a value of the primitive type for the language @m@.
 encodePrim :: (PatM m, Prim m ~ prim) => prim -> Alg m
@@ -195,7 +191,13 @@ infixr 0 ~>
 new :: forall m a. (PatM m, Algebraic m a) => a -> m (ADT m a)
 new = alloc . (flatten :: Alg m -> [Prim m]) . encode
 
-matchOne :: forall m a. PatM m => ADT m a -> Alg m -> Int -> m (Prim m)
+-- | Match the given ADT, starting at the given offset, against the given
+--   pattern. Returns true or false.
+matchOne :: forall m a. (Typeable a, PatM m)
+         => ADT m a
+         -> Alg m
+         -> Int
+         -> m (Prim m)
 matchOne ptr pat off = do
   case pat of
     Prim p -> do
@@ -258,6 +260,10 @@ injFor p = throw . PatEx . encodeFor p
 -- | Inject an untyped named wildcard for the given EDSL.
 --   The proxy gives the type of the language, the boolean indicates whether
 --   the injected hole is primitive or not.
-untypedVarFor :: forall m a. (Typeable a, Algebraic m a) => Proxy m -> Bool -> Name m -> a
-untypedVarFor _ prim n =
-    throw . PatEx . (Hole :: Maybe (Bool, Name m) -> Alg m) . Just $ (prim, n)
+varFor :: forall m a. (Typeable (Ref m a), Algebraic m a) => Proxy m -> Bool -> Ref m a -> a
+varFor _ prim n
+  = throw
+  . PatEx
+  . (Hole :: Maybe (Bool, Dynamic) -> Alg m)
+  . Just
+  $ (prim, toDyn n)

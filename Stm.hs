@@ -8,6 +8,7 @@ import Control.Monad
 import Data.Proxy
 import Control.Exception
 import Data.Typeable
+import Data.Dynamic
 
 data Stm a where
   -- Monad ops
@@ -60,14 +61,18 @@ wordSize = 8
 instance Pat.PatM Stm where
   type ADT Stm  = Exp
   type Prim Stm = Exp Int
-  type Name Stm = Int
+  type Ref Stm = Var
   alloc xs = do
     ptr@(Var v) <- Alloca (length xs)
     sequence_ [Write ptr i x | (i, x) <- zip [0..] xs]
     return (Alg v)
   equals a b = pure $ b2i $ a .== b
-  setRef True v x = index x 0 >>= Set (V v)
-  setRef _ v x    = Set (V v) x
+  setRef True v x =
+    case fromDynamic v of
+      Just v' -> index x 0 >>= Set v'
+  setRef _ v x =
+    case fromDynamic v of
+      Just v' -> Set v' x
   index (Alg v) off = Read (Var v) off
   index (Var (V v)) off = index (Alg (V v)) off
   slice (Alg v) off = do
@@ -81,6 +86,6 @@ inj = injFor (Proxy :: Proxy Stm)
 
 -- | A named wildcard.
 var :: forall a. (Typeable a, Algebraic Stm a) => Var a -> a
-var = untypedVarFor (Proxy :: Proxy Stm) isPrim . varName
+var = varFor (Proxy :: Proxy Stm) isPrim
   where
     isPrim = typeRep (Proxy :: Proxy a) == typeRep (Proxy :: Proxy Int)
