@@ -53,14 +53,14 @@ size (Prim _)   = 1
 size (Con _ as) = sum (map size as) + 1
 size (Hole _)   = error "holes have no size, silly"
 
-class If c a where
-  if_ :: c -> a -> a -> a
+class If m c a where
+  if_ :: c -> m a -> m a -> m a
 
 class ( Monad m
       , Typeable m
       , Typeable (Prim m)
       , Typeable (ADT m)
-      , If (Prim m) (m (Prim m))
+      , If m (Prim m) (Prim m)
       ) => PatM m where
   -- | The type of algebraic values in the client language.
   type ADT m  :: * -> *
@@ -228,7 +228,7 @@ matchOne ptr pat off = do
       return []
 
 -- | Match with default; if no pattern matches, the first argument is returned.
-matchDef :: (Algebraic m a, Algebraic m b, If (Prim m) (m b)) => b -> ADT m a -> [Case m a b] -> m b
+matchDef :: (Algebraic m a, Algebraic m b, If m (Prim m) b) => b -> ADT m a -> [Case m a b] -> m b
 matchDef def scrut cases = do
     go scrut cases
   where

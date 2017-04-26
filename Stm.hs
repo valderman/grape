@@ -44,7 +44,7 @@ instance Monad Stm where
   return = Return
   (>>=)  = Bind
 
-instance If (Exp Int) (Stm (Exp a)) where
+instance If Stm (Exp Int) (Exp a) where
   if_ c = If (i2b c)
 
 type instance Term Stm a = Exp a
