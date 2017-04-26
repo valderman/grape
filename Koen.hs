@@ -47,6 +47,10 @@ clause xs = withSolver $ \s -> withPre $ \pre -> lift $ addClause s (pre++xs)
 --------------------------------------------------------------------------------
 
 instance If S Lit WORD where
+  if_ c mwa mwb
+    | c == true  = mwa
+    | c == false = mwb
+  
   if_ c mwa mwb =
     do W as <- when [c]     mwa
        W bs <- when [neg c] mwb
@@ -87,8 +91,11 @@ instance PatM S where
     bin n = bool (odd n) : bin (n `div` 2)
 
   equals (W xs) (W ys) =
-    do b <- withSolver $ \s -> lift $ isEqual s xs ys
+    do b <- withSolver $ \s -> lift $ isEqual s (pad xs) (pad ys)
        return (W [b])
+   where
+    n      = length xs `max` length ys
+    pad xs = xs ++ replicate (n - length xs) false
 
   setRef _ dyn e =
     case fromDynamic dyn of
