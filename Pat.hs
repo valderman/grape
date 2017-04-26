@@ -106,6 +106,15 @@ class ( Monad m
   conjunction [] = do
     pure (fromInt (Proxy :: Proxy m) 1)
 
+-- | A term of type @a@ in the language @m@.
+--   If the language @m@ has an expression type @Exp a@ which wraps all values,
+--   you'd need an instance @type instance Term m a = Exp a@ to inject values
+--   into it using 'injFor'.
+--
+--   In general, there should be one @Term m a@ for each instance of
+--   @Algebraic m a@.
+type family Term (m :: * -> *) a
+
 data PatEx where
   PatEx :: Typeable m => Alg m -> PatEx
 instance Show PatEx where
@@ -126,9 +135,6 @@ enc x = unsafePerformIO $ do
 same :: forall m1 m2. (Typeable m1, Typeable m2)
      => Alg (m1 :: * -> *) -> Proxy (m2 :: * -> *) -> Maybe (m1 :~: m2)
 same _ _ = eqT :: Maybe (m1 :~: m2)
-
--- | A term of type @a@ in the language @m@.
-type family Term (m :: * -> *) a
 
 class (Typeable a, PatM m) => Algebraic m a where
   encode :: a -> Alg m
