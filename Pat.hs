@@ -153,10 +153,6 @@ encodeFor _ = encode
 class PatM m => GAlg m f where
   algG :: f a -> Int -> [Alg m]
 
--- Constructor without arguments: M1 C case takes care of this
-instance PatM m => GAlg m U1 where
-  algG U1 _ = []
-
 -- Data constructor metadata: a value begins here
 instance (GAlg m a, Constructor c) => GAlg m (M1 C c a) where
   algG (M1 x) tid = [Con (fromInt (Proxy :: Proxy m) tid) (algG x 0)]
