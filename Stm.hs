@@ -47,10 +47,32 @@ instance Monad Stm where
 instance If Stm (Exp Int) (Exp a) where
   if_ c = If (i2b c)
 
-type instance Term Stm a = Exp a
+instance If Stm (Exp Bool) (Alg a) where
+  if_ c a b = Alg <$> If c (unAlg <$> a) (unAlg <$> b)
+    where unAlg (Alg x) = x
+
+instance If Stm (Exp Bool) () where
+  if_ c a b = If c (a >> pure Undef) (b >> pure Undef) >> pure ()
+
+type instance Embed Stm Int  = Exp Int
+type instance Embed Stm Bool = Exp Bool
 
 instance Algebraic Stm (Exp Int) where
   encode = encodePrim
+  match = matchPrim
+
+instance Algebraic Stm (Exp Bool) where
+  encode = encodePrim . B2I
+  match = matchPrim . B2I
+
+instance Algebraic Stm Int where
+  encode = encodePrim . Const
+  match = matchPrim . Const
+
+instance Algebraic Stm Bool where
+  encode = encode . Bool
+  match = matchPrim . B2I . Bool
+
 
 -- | IMPORANT: the code generator of the example EDSL treats pointers as ints
 --   except when dereferencing, so pointer arithmetic must happen in increments
@@ -58,35 +80,41 @@ instance Algebraic Stm (Exp Int) where
 wordSize :: Exp Int
 wordSize = 8
 
+data AlgRef a where
+  AlgRef  :: Var Int -> AlgRef (Alg a)
+  PrimRef :: Var Int -> AlgRef (Exp Int)
+
+instance RefM Stm (Exp Int) where
+  type Ref Stm (Exp Int) = AlgRef (Exp Int)
+  setRef (PrimRef r) = Set r
+
+instance RefM Stm (Alg a) where
+  type Ref Stm (Alg a) = AlgRef (Alg a)
+  setRef (AlgRef r) (Alg x) = Set r x
+
+type Ptr = Exp Int
+data Alg a = Alg Ptr
+
 instance Pat.PatM Stm where
-  type ADT Stm  = Exp
+  type ADT Stm  = Alg
   type Prim Stm = Exp Int
-  type Ref Stm = Var
   alloc xs = do
-    ptr@(Var v) <- Alloca (length xs)
+    ptr <- Alloca (length xs)
     sequence_ [Write ptr i x | (i, x) <- zip [0..] xs]
-    return (Alg v)
+    return (Alg ptr)
   equals a b = pure $ b2i $ a .== b
-  setRef True v x =
-    case fromDynamic v of
-      Just v' -> index x 0 >>= Set v'
-  setRef _ v x =
-    case fromDynamic v of
-      Just v' -> Set v' x
-  index (Alg v) off = Read (Var v) off
-  index (Var (V v)) off = index (Alg (V v)) off
-  slice (Alg v) off = do
-    v' <- NewRef (Var v + fromIntegral off*wordSize)
-    pure $ Alg v'
-  slice (Var (V v)) off = slice (Alg (V v)) off
+  index (Alg ptr) off = Read ptr off
+  slice (Alg ptr) off = pure $ Alg (ptr + fromIntegral off*wordSize)
   fromInt _ = fromIntegral
 
 -- | Inject an EDSL term into an ADT.
-inj :: Algebraic Stm (Exp a) => Exp a -> a
+inj :: Algebraic Stm (Embed Stm a) => Embed Stm a -> a
 inj = injFor (Proxy :: Proxy Stm)
 
 -- | A named wildcard.
-var :: forall a. (Typeable a, Algebraic Stm a) => Var a -> a
-var = varFor (Proxy :: Proxy Stm) isPrim
-  where
-    isPrim = typeRep (Proxy :: Proxy a) == typeRep (Proxy :: Proxy Int)
+primVar :: (Embed Stm a ~ Prim Stm, Typeable a, RefM Stm (Prim Stm)) => Ref Stm (Prim Stm) -> a
+primVar = primVarFor (Proxy :: Proxy Stm)
+
+-- | A named wildcard.
+algVar :: (Typeable a, RefM Stm (ADT Stm a)) => Ref Stm (ADT Stm a) -> a
+algVar = algVarFor (Proxy :: Proxy Stm)

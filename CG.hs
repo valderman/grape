@@ -68,7 +68,6 @@ cgExp (B2I b)      = cgExp b
 cgExp (I2B i)      = cgExp i
 cgExp (BOp op a b) = mconcat ["(", cgExp a, cgBOp op, cgExp b, ")"]
 cgExp (Var v)      = cgVar v
-cgExp (Exp.Alg v)  = cgVar v
 cgExp (Undef)      = "0"
 
 cgBOp :: BOp a b -> String

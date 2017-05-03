@@ -30,8 +30,10 @@ data Exp a where
   I2B   :: Exp Int -> Exp Bool
   BOp   :: BOp a b -> Exp a -> Exp a -> Exp b
   Var   :: Var a -> Exp a
-  Alg   :: Var Int -> Exp a
   Undef :: Exp a
+
+unsafeFreeze :: Var a -> Exp a
+unsafeFreeze = Var
 
 instance Show (Exp Int) where
   show (Const n)   = show n
